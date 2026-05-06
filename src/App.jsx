@@ -1,546 +1,612 @@
-import { useState, useEffect, useRef } from "react";
 
-const STAGES = ["Lead Research", "Outreach Email", "Follow Up", "Proposal", "Meeting"];
+import { useState, useRef, useEffect } from "react";
 
-const NICHES = [
-  "SaaS Companies","E-commerce Stores","Real Estate Agencies",
-  "Digital Marketing Agencies","Law Firms","Healthcare Clinics",
-  "Restaurants & Food Brands","Fitness & Wellness Studios",
-  "Education & Coaching","Construction & Home Services","Custom / Manual",
-];
+// ── helpers ──────────────────────────────────────────────────────────────────
+const MODEL = "claude-sonnet-4-5";
 
-const COUNTRIES = [
-  "United States","United Kingdom","Canada","Australia",
-  "Germany","UAE","Bangladesh","India","Pakistan","Singapore",
-];
+async function callClaude(apiKey, systemPrompt, userPrompt) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 1500,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }],
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `HTTP ${res.status}`);
+  }
+  const data = await res.json();
+  return data.content.map((b) => b.text || "").join("");
+}
 
-const SERVICES = [
-  "SEO & Content Marketing","Social Media Management","Paid Ads (Google/Meta)",
-  "Web Design & Development","Email Marketing","Video Production",
-  "Branding & Graphic Design","Full-Stack Digital Marketing",
-];
+function parseJSON(raw) {
+  try {
+    const cleaned = raw.replace(/```json|```/g, "").trim();
+    return JSON.parse(cleaned);
+  } catch {
+    return null;
+  }
+}
 
-const statusColors = {
-  idle: "#4a5568", running: "#f6ad55", done: "#68d391", error: "#fc8181",
+function buildCalendarLink({ title, description, startISO, durationMins = 60, location = "" }) {
+  const fmt = (d) => d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+  const start = new Date(startISO);
+  const end = new Date(start.getTime() + durationMins * 60000);
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: title,
+    details: description,
+    location,
+    dates: `${fmt(start)}/${fmt(end)}`,
+  });
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
+const TABS = ["⚙️ Setup", "🚀 Workflow", "👥 Leads", "📅 Meetings"];
+
+const DEFAULT_CONFIG = {
+  niche: "E-commerce Stores",
+  service: "Web Design & Development",
+  country: "Bangladesh",
+  price: "$500 – $2,000",
+  calendlyLink: "",
+  yourName: "",
+  yourEmail: "",
+  companyName: "",
 };
 
-const inputStyle = {
-  background: "#161b22", border: "1px solid #30363d", borderRadius: "6px",
-  padding: "9px 12px", color: "#e6edf3", fontSize: "13px", width: "100%",
-};
+const STAGE_KEYS = ["leads", "email", "followup", "proposal", "meeting"];
+const STAGE_META = [
+  { key: "leads",    icon: "🔍", label: "Lead Research" },
+  { key: "email",    icon: "✉️",  label: "Outreach Email" },
+  { key: "followup", icon: "🔁", label: "Follow Up" },
+  { key: "proposal", icon: "📄", label: "Proposal" },
+  { key: "meeting",  icon: "📅", label: "Meeting" },
+];
 
-function TerminalLog({ logs }) {
-  const ref = useRef(null);
-  useEffect(() => { if (ref.current) ref.current.scrollTop = ref.current.scrollHeight; }, [logs]);
+// ── sub-components ────────────────────────────────────────────────────────────
+
+function ApiKeyBanner({ apiKey, setApiKey }) {
+  const [draft, setDraft] = useState(apiKey);
+  const [show, setShow] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const save = () => {
+    setApiKey(draft.trim());
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
   return (
-    <div ref={ref} style={{
-      background:"#0d1117",borderRadius:"8px",padding:"16px",
-      fontFamily:"'Courier New',monospace",fontSize:"12px",color:"#c9d1d9",
-      height:"200px",overflowY:"auto",border:"1px solid #30363d",lineHeight:"1.7",
-    }}>
-      {logs.length===0 && <span style={{color:"#484f58"}}>// Awaiting workflow start...</span>}
-      {logs.map((log,i)=>(
-        <div key={i} style={{color:log.type==="success"?"#68d391":log.type==="error"?"#fc8181":log.type==="info"?"#79c0ff":"#c9d1d9"}}>
-          <span style={{color:"#484f58"}}>[{log.time}]</span> {log.msg}
+    <div className="api-banner">
+      <span className="api-label">🔑 Anthropic API Key</span>
+      {apiKey && <span className="api-ok">✓ Key saved (session only)</span>}
+      <div className="api-row">
+        <input
+          className="api-input"
+          type={show ? "text" : "password"}
+          placeholder="sk-ant-…"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && save()}
+        />
+        <button className="btn-ghost" onClick={() => setShow(!show)}>{show ? "🙈" : "👁"}</button>
+        <button className="btn-primary" onClick={save}>{saved ? "✓ Saved!" : "Save"}</button>
+      </div>
+    </div>
+  );
+}
+
+function SetupTab({ config, setConfig }) {
+  const field = (key, label, placeholder, type = "text") => (
+    <div className="field">
+      <label>{label}</label>
+      <input
+        type={type}
+        placeholder={placeholder}
+        value={config[key]}
+        onChange={(e) => setConfig((c) => ({ ...c, [key]: e.target.value }))}
+      />
+    </div>
+  );
+
+  return (
+    <div className="setup-grid">
+      <div className="card">
+        <h3>🎯 Target</h3>
+        {field("niche",   "Target Niche",    "E-commerce Stores")}
+        {field("service", "Your Service",    "Web Design & Development")}
+        {field("country", "Target Country",  "Bangladesh")}
+        {field("price",   "Pricing Range",   "$500 – $2,000")}
+      </div>
+      <div className="card">
+        <h3>🏢 Your Info</h3>
+        {field("yourName",    "Your Name",      "Rubel Ahmed")}
+        {field("yourEmail",   "Your Email",     "you@example.com", "email")}
+        {field("companyName", "Company Name",   "Rubel SBS")}
+        {field("calendlyLink","Calendly / Booking Link", "https://calendly.com/you")}
+      </div>
+      <div className="card config-preview">
+        <h3>📋 Active Configuration</h3>
+        <div className="tags">
+          {[config.niche, config.service, config.country].filter(Boolean).map((t) => (
+            <span key={t} className="tag">{t}</span>
+          ))}
+        </div>
+        <p className="hint">Fill out both panels, then go to 🚀 Workflow to run the full pipeline.</p>
+      </div>
+    </div>
+  );
+}
+
+function ProgressBar({ pct }) {
+  return (
+    <div className="progress-wrap">
+      <div className="progress-bar" style={{ width: `${pct}%` }} />
+      <span className="progress-label">{Math.round(pct)}%</span>
+    </div>
+  );
+}
+
+function StageCard({ meta, status, result, onView }) {
+  const cls = status === "done" ? "stage done" : status === "error" ? "stage error" : status === "running" ? "stage running" : "stage";
+  const icon = status === "done" ? "✅" : status === "error" ? "❌" : status === "running" ? "⏳" : meta.icon;
+  return (
+    <div className={cls} onClick={status === "done" ? onView : undefined} title={status === "done" ? "Click to view" : ""}>
+      <span className="stage-icon">{icon}</span>
+      <span className="stage-label">{meta.label}</span>
+      {status === "done" && <span className="stage-view">View →</span>}
+    </div>
+  );
+}
+
+function WorkflowTab({ config, apiKey, stages, setStages, logs, setLogs, running, setRunning }) {
+  const logRef = useRef(null);
+
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [logs]);
+
+  const log = (msg) => setLogs((l) => [...l, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+
+  const pct = STAGE_KEYS.reduce((acc, k) => acc + (stages[k]?.status === "done" ? 20 : 0), 0);
+
+  const setStage = (key, patch) => setStages((s) => ({ ...s, [key]: { ...s[key], ...patch } }));
+
+  async function runAll() {
+    if (!apiKey) { alert("Please enter your Anthropic API key first."); return; }
+    setRunning(true);
+    setLogs([]);
+    setStages({ leads: {}, email: {}, followup: {}, proposal: {}, meeting: {} });
+
+    const ctx = config;
+    let leadData = null;
+
+    // 1. LEADS
+    try {
+      setStage("leads", { status: "running" });
+      log("🔍 Researching leads for: " + ctx.niche);
+      const raw = await callClaude(apiKey,
+        "You are a B2B lead research expert. Return ONLY valid JSON, no markdown.",
+        `Generate 5 realistic potential ${ctx.niche} business leads in ${ctx.country} needing ${ctx.service}.
+Return JSON array: [{"name":"Business Name","contact":"Owner Name","email":"email@example.com","website":"https://...","pain_point":"specific problem","size":"small/medium"}]`
+      );
+      const parsed = parseJSON(raw);
+      if (!parsed) throw new Error("Could not parse lead data");
+      leadData = parsed;
+      setStage("leads", { status: "done", result: parsed });
+      log("✅ Found " + parsed.length + " leads");
+    } catch (e) {
+      setStage("leads", { status: "error", result: e.message });
+      log("❌ Lead research failed: " + e.message);
+    }
+
+    // 2. OUTREACH EMAIL
+    try {
+      setStage("email", { status: "running" });
+      log("✉️ Drafting personalized outreach email…");
+      const lead = leadData?.[0];
+      const text = await callClaude(apiKey,
+        "You are an expert cold email copywriter. Write concise, personalized, high-converting emails.",
+        `Write a cold outreach email from ${ctx.yourName || "us"} at ${ctx.companyName || ctx.service} to ${lead?.contact || "the owner"} at ${lead?.name || ctx.niche}.
+Service: ${ctx.service}. Pain point: ${lead?.pain_point || "scaling their online presence"}.
+Pricing starts at ${ctx.price}. Keep it under 150 words. Include subject line.`
+      );
+      setStage("email", { status: "done", result: text });
+      log("✅ Outreach email drafted");
+    } catch (e) {
+      setStage("email", { status: "error", result: e.message });
+      log("❌ Email drafting failed: " + e.message);
+    }
+
+    // 3. FOLLOW-UP SEQUENCE
+    try {
+      setStage("followup", { status: "running" });
+      log("🔁 Building 3-email follow-up sequence…");
+      const text = await callClaude(apiKey,
+        "You are an expert in email follow-up sequences. Be concise and value-focused.",
+        `Write a 3-email follow-up sequence for ${ctx.service} targeting ${ctx.niche} in ${ctx.country}.
+Emails: Day 3 (value add), Day 7 (case study/social proof), Day 14 (final soft close).
+Sender: ${ctx.yourName || "us"} from ${ctx.companyName || ctx.service}. Pricing: ${ctx.price}.
+Label each email clearly with Day X and Subject line.`
+      );
+      setStage("followup", { status: "done", result: text });
+      log("✅ Follow-up sequence ready");
+    } catch (e) {
+      setStage("followup", { status: "error", result: e.message });
+      log("❌ Follow-up failed: " + e.message);
+    }
+
+    // 4. PROPOSAL
+    try {
+      setStage("proposal", { status: "running" });
+      log("📄 Generating proposal template…");
+      const text = await callClaude(apiKey,
+        "You are a professional business proposal writer. Create detailed, persuasive proposals.",
+        `Create a professional ${ctx.service} proposal for a ${ctx.niche} client in ${ctx.country}.
+Include: Executive Summary, Problem Statement, Proposed Solution, Deliverables (with timeline), Investment (${ctx.price}), Why Us, Next Steps.
+Sender: ${ctx.companyName || ctx.yourName || "Our Agency"}.`
+      );
+      setStage("proposal", { status: "done", result: text });
+      log("✅ Proposal template generated");
+    } catch (e) {
+      setStage("proposal", { status: "error", result: e.message });
+      log("❌ Proposal failed: " + e.message);
+    }
+
+    // 5. MEETING MESSAGE
+    try {
+      setStage("meeting", { status: "running" });
+      log("📅 Writing meeting booking message…");
+      const lead = leadData?.[0];
+      const text = await callClaude(apiKey,
+        "You are a meeting scheduler expert. Write professional, friendly booking messages.",
+        `Write a meeting booking message to ${lead?.contact || "the prospect"} at ${lead?.name || ctx.niche}.
+Purpose: Discovery call about ${ctx.service}.
+${ctx.calendlyLink ? `Booking link: ${ctx.calendlyLink}` : "Ask them to reply with availability."}
+Duration: 30 mins. Sender: ${ctx.yourName || "us"} from ${ctx.companyName || ctx.service}.
+Also suggest: next Tuesday 10 AM or Wednesday 2 PM Bangladesh time as options.`
+      );
+
+      // Build Google Calendar link for the suggested slot
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 7);
+      tomorrow.setHours(10, 0, 0, 0);
+      const gcalLink = buildCalendarLink({
+        title: `Discovery Call – ${ctx.companyName || ctx.service} × ${lead?.name || ctx.niche}`,
+        description: `Discovery call to discuss ${ctx.service} proposal.\nContact: ${lead?.contact || ""}\nWebsite: ${lead?.website || ""}`,
+        startISO: tomorrow.toISOString(),
+        durationMins: 30,
+        location: ctx.calendlyLink || "Google Meet",
+      });
+
+      setStage("meeting", { status: "done", result: text, gcalLink });
+      log("✅ Meeting message ready");
+    } catch (e) {
+      setStage("meeting", { status: "error", result: e.message });
+      log("❌ Meeting message failed: " + e.message);
+    }
+
+    log("🎉 Full workflow complete! Click any stage to view results.");
+    setRunning(false);
+  }
+
+  const [modal, setModal] = useState(null);
+
+  return (
+    <div className="workflow-wrap">
+      {modal && (
+        <div className="modal-overlay" onClick={() => setModal(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>{STAGE_META.find((m) => m.key === modal)?.icon} {STAGE_META.find((m) => m.key === modal)?.label}</h3>
+              <button className="modal-close" onClick={() => setModal(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {modal === "leads" && Array.isArray(stages.leads?.result)
+                ? <LeadTable leads={stages.leads.result} />
+                : <pre className="result-pre">{typeof stages[modal]?.result === "string" ? stages[modal].result : JSON.stringify(stages[modal]?.result, null, 2)}</pre>
+              }
+              {modal === "meeting" && stages.meeting?.gcalLink && (
+                <a className="btn-primary gcal-btn" href={stages.meeting.gcalLink} target="_blank" rel="noreferrer">
+                  📅 Add to Google Calendar
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="workflow-header">
+        <div>
+          <h2>🚀 Full Workflow</h2>
+          <p className="sub">Find Lead → Research → Draft Email → Follow Up → Proposal → Book Meeting</p>
+        </div>
+        <button className="btn-primary btn-run" onClick={runAll} disabled={running}>
+          {running ? "⏳ Running…" : "▶ Run Full Workflow"}
+        </button>
+      </div>
+
+      <ProgressBar pct={pct} />
+
+      <div className="stages">
+        {STAGE_META.map((m) => (
+          <StageCard
+            key={m.key}
+            meta={m}
+            status={stages[m.key]?.status || "idle"}
+            result={stages[m.key]?.result}
+            onView={() => setModal(m.key)}
+          />
+        ))}
+      </div>
+
+      <div className="log-box" ref={logRef}>
+        <div className="log-title">📟 Activity Log</div>
+        {logs.length === 0 && <div className="log-empty">Logs will appear here when you run the workflow…</div>}
+        {logs.map((l, i) => <div key={i} className="log-line">{l}</div>)}
+      </div>
+    </div>
+  );
+}
+
+function LeadTable({ leads }) {
+  return (
+    <div className="lead-table-wrap">
+      {leads.map((lead, i) => (
+        <div key={i} className="lead-card">
+          <div className="lead-card-header">
+            <strong>{lead.name}</strong>
+            <span className="tag">{lead.size}</span>
+          </div>
+          <div className="lead-detail">👤 {lead.contact}</div>
+          <div className="lead-detail">📧 <a href={`mailto:${lead.email}`}>{lead.email}</a></div>
+          <div className="lead-detail">🌐 <a href={lead.website} target="_blank" rel="noreferrer">{lead.website}</a></div>
+          <div className="lead-pain">💡 {lead.pain_point}</div>
         </div>
       ))}
     </div>
   );
 }
 
-function StageCard({ stage, status, result, index }) {
-  const [open, setOpen] = useState(false);
-  const icons = ["🔍","✉️","🔁","📄","📅"];
-  return (
-    <div style={{
-      background:status==="done"?"rgba(104,211,145,0.07)":status==="running"?"rgba(246,173,85,0.08)":"rgba(255,255,255,0.03)",
-      border:`1px solid ${status==="done"?"#2d6a4f":status==="running"?"#744210":"#21262d"}`,
-      borderRadius:"10px",padding:"14px 18px",marginBottom:"10px",
-      cursor:result?"pointer":"default",transition:"all 0.3s ease",
-    }} onClick={()=>result&&setOpen(!open)}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
-          <span style={{fontSize:"18px"}}>{icons[index]}</span>
-          <span style={{color:"#e6edf3",fontWeight:"600",fontSize:"14px"}}>{stage}</span>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
-          {status==="running"&&<div style={{width:"8px",height:"8px",borderRadius:"50%",background:"#f6ad55",animation:"pulse 1s infinite"}}/>}
-          <span style={{fontSize:"11px",fontWeight:"600",padding:"3px 10px",borderRadius:"20px",
-            background:statusColors[status]+"22",color:statusColors[status],textTransform:"uppercase",letterSpacing:"0.5px"}}>
-            {status==="idle"?"Waiting":status==="running"?"In Progress":status==="done"?"Complete":"Error"}
-          </span>
-          {result&&<span style={{color:"#484f58",fontSize:"12px"}}>{open?"▲":"▼"}</span>}
-        </div>
+function LeadsTab({ apiKey, config, stages }) {
+  const leads = Array.isArray(stages.leads?.result) ? stages.leads.result : [];
+  const [selected, setSelected] = useState(null);
+  const [content, setContent] = useState({});
+  const [loading, setLoading] = useState({});
+
+  async function generate(lead, type) {
+    if (!apiKey) { alert("API key required"); return; }
+    const key = `${lead.email}-${type}`;
+    setLoading((l) => ({ ...l, [key]: true }));
+    try {
+      let prompt = "";
+      if (type === "email")
+        prompt = `Write a short personalized cold email to ${lead.contact} at ${lead.name} about ${config.service}. Their pain point: ${lead.pain_point}. Pricing: ${config.price}. Sender: ${config.yourName || "us"} from ${config.companyName || config.service}. Include subject line. Max 120 words.`;
+      else if (type === "proposal")
+        prompt = `Write a concise proposal for ${lead.name} (${lead.contact}) for ${config.service}. Pain point: ${lead.pain_point}. Investment: ${config.price}. Agency: ${config.companyName || config.service}.`;
+      else if (type === "meeting") {
+        prompt = `Write a meeting request to ${lead.contact} at ${lead.name} for a 30-min discovery call about ${config.service}. ${config.calendlyLink ? `Booking link: ${config.calendlyLink}` : "Ask for their availability."} Sender: ${config.yourName || "us"}.`;
+      }
+      const text = await callClaude(apiKey, "You are a professional B2B sales expert.", prompt);
+      setContent((c) => ({ ...c, [key]: text }));
+    } catch (e) {
+      setContent((c) => ({ ...c, [key]: "Error: " + e.message }));
+    }
+    setLoading((l) => ({ ...l, [key]: false }));
+  }
+
+  if (leads.length === 0)
+    return (
+      <div className="empty-state">
+        <div className="empty-icon">👥</div>
+        <p>No leads yet. Run the 🚀 Workflow first to generate leads.</p>
       </div>
-      {open&&result&&(
-        <div style={{marginTop:"12px",padding:"12px",background:"#0d1117",borderRadius:"6px",
-          fontSize:"13px",color:"#c9d1d9",whiteSpace:"pre-wrap",lineHeight:"1.7",
-          border:"1px solid #21262d",maxHeight:"300px",overflowY:"auto"}}>
-          {result}
+    );
+
+  return (
+    <div className="leads-tab">
+      <div className="leads-list">
+        {leads.map((lead, i) => (
+          <div key={i} className={`lead-row ${selected === i ? "active" : ""}`} onClick={() => setSelected(i)}>
+            <strong>{lead.name}</strong>
+            <span className="lead-row-sub">{lead.contact}</span>
+          </div>
+        ))}
+      </div>
+      {selected !== null && (
+        <div className="lead-detail-panel">
+          <div className="lead-detail-header">
+            <h3>{leads[selected].name}</h3>
+            <span className="tag">{leads[selected].size}</span>
+          </div>
+          <div className="lead-info-grid">
+            <div>👤 {leads[selected].contact}</div>
+            <div>📧 <a href={`mailto:${leads[selected].email}`}>{leads[selected].email}</a></div>
+            <div>🌐 <a href={leads[selected].website} target="_blank" rel="noreferrer">{leads[selected].website}</a></div>
+            <div>💡 {leads[selected].pain_point}</div>
+          </div>
+          <div className="lead-actions">
+            {["email","proposal","meeting"].map((type) => {
+              const key = `${leads[selected].email}-${type}`;
+              const icons = { email: "✉️", proposal: "📄", meeting: "📅" };
+              return (
+                <div key={type} className="lead-action-block">
+                  <button
+                    className="btn-secondary"
+                    disabled={loading[key]}
+                    onClick={() => generate(leads[selected], type)}
+                  >
+                    {loading[key] ? "⏳ Generating…" : `${icons[type]} Generate ${type.charAt(0).toUpperCase()+type.slice(1)}`}
+                  </button>
+                  {content[key] && (
+                    <div className="generated-content">
+                      <pre>{content[key]}</pre>
+                      <button className="btn-ghost copy-btn" onClick={() => navigator.clipboard.writeText(content[key])}>📋 Copy</button>
+                      {type === "meeting" && (
+                        <a className="btn-primary gcal-btn"
+                          href={buildCalendarLink({
+                            title: `Discovery Call – ${config.companyName || config.service} × ${leads[selected].name}`,
+                            description: content[key],
+                            startISO: (() => { const d = new Date(); d.setDate(d.getDate()+7); d.setHours(10,0,0,0); return d.toISOString(); })(),
+                            durationMins: 30,
+                            location: config.calendlyLink || "Google Meet",
+                          })}
+                          target="_blank" rel="noreferrer"
+                        >📅 Add to Google Calendar</a>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-function LeadCard({ lead, onAction, loadingAction }) {
-  const isLoading = (a) => loadingAction === lead.email+a;
-  return (
-    <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid #21262d",borderRadius:"10px",padding:"16px",marginBottom:"10px"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:"8px"}}>
-        <div>
-          <div style={{color:"#e6edf3",fontWeight:"700",fontSize:"15px"}}>{lead.company}</div>
-          <div style={{color:"#8b949e",fontSize:"12px",marginTop:"2px"}}>{lead.contact} · {lead.role}</div>
-          <div style={{color:"#79c0ff",fontSize:"12px",marginTop:"2px"}}>{lead.email}</div>
-          <div style={{color:"#484f58",fontSize:"12px"}}>{lead.website}</div>
-        </div>
-        <span style={{fontSize:"11px",padding:"3px 10px",borderRadius:"20px",fontWeight:"700",
-          background:lead.score>=80?"rgba(104,211,145,0.15)":lead.score>=60?"rgba(246,173,85,0.15)":"rgba(252,129,129,0.15)",
-          color:lead.score>=80?"#68d391":lead.score>=60?"#f6ad55":"#fc8181"}}>
-          Score: {lead.score}
-        </span>
-      </div>
-      <div style={{marginTop:"10px",fontSize:"12px",color:"#8b949e"}}>
-        <strong style={{color:"#c9d1d9"}}>Pain Point:</strong> {lead.pain}
-      </div>
-      <div style={{display:"flex",gap:"8px",marginTop:"12px",flexWrap:"wrap"}}>
-        {[["email","✉ Draft Email","#238636"],["proposal","📄 Proposal","#1f6feb"],["meeting","📅 Meeting","#6e40c9"]].map(([a,label,bg])=>(
-          <button key={a} onClick={()=>onAction(lead,a)} disabled={!!loadingAction} style={{
-            background:isLoading(a)?"#21262d":bg,color:isLoading(a)?"#484f58":"#fff",
-            border:"none",borderRadius:"6px",padding:"6px 14px",fontSize:"12px",
-            cursor:loadingAction?"not-allowed":"pointer",fontWeight:"600",
-          }}>
-            {isLoading(a)?"⏳ Generating...":label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
+function MeetingsTab({ config, stages }) {
+  const leads = Array.isArray(stages.leads?.result) ? stages.leads.result : [];
 
-function Modal({ title, content, onClose }) {
-  if(!content) return null;
-  return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",display:"flex",
-      alignItems:"center",justifyContent:"center",zIndex:1000,padding:"20px"}} onClick={onClose}>
-      <div style={{background:"#161b22",borderRadius:"12px",padding:"28px",maxWidth:"640px",
-        width:"100%",border:"1px solid #30363d",maxHeight:"80vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}}>
-          <h3 style={{color:"#e6edf3",margin:0,fontSize:"16px"}}>{title}</h3>
-          <button onClick={onClose} style={{background:"none",border:"none",color:"#8b949e",fontSize:"20px",cursor:"pointer"}}>✕</button>
-        </div>
-        <div style={{background:"#0d1117",borderRadius:"8px",padding:"16px",fontSize:"13px",
-          color:"#c9d1d9",whiteSpace:"pre-wrap",lineHeight:"1.8",border:"1px solid #21262d"}}>
-          {content}
-        </div>
-        <button onClick={()=>navigator.clipboard.writeText(content)} style={{
-          marginTop:"14px",background:"#21262d",color:"#c9d1d9",border:"1px solid #30363d",
-          borderRadius:"6px",padding:"8px 16px",fontSize:"13px",cursor:"pointer"}}>
-          📋 Copy to Clipboard
-        </button>
-      </div>
-    </div>
-  );
-}
+  const slots = [
+    { label: "This Tuesday 10:00 AM", offset: 2 },
+    { label: "This Wednesday 2:00 PM", offset: 3, hour: 14 },
+    { label: "Next Monday 11:00 AM", offset: 8, hour: 11 },
+    { label: "Next Thursday 3:00 PM", offset: 11, hour: 15 },
+  ];
 
-function ApiKeyBanner({ apiKey, setApiKey, saved, setSaved }) {
-  const [show, setShow] = useState(false);
-  const [input, setInput] = useState(apiKey);
-  return (
-    <div style={{background:"rgba(121,192,255,0.07)",borderBottom:"1px solid #1f3a5f",padding:"10px 24px",
-      display:"flex",alignItems:"center",gap:"12px",flexWrap:"wrap"}}>
-      <span style={{fontSize:"12px",color:"#79c0ff",fontWeight:"600"}}>🔑 Anthropic API Key</span>
-      {saved
-        ? <span style={{fontSize:"12px",color:"#68d391"}}>✓ Key saved (session only)</span>
-        : <span style={{fontSize:"12px",color:"#f6ad55"}}>⚠ No API key set — app won't work without it</span>}
-      <div style={{display:"flex",gap:"8px",marginLeft:"auto"}}>
-        <input
-          type={show?"text":"password"}
-          value={input}
-          onChange={e=>setInput(e.target.value)}
-          placeholder="sk-ant-..."
-          style={{...inputStyle,width:"260px",fontSize:"12px"}}
-        />
-        <button onClick={()=>setShow(s=>!s)} style={{background:"#21262d",border:"1px solid #30363d",
-          color:"#8b949e",borderRadius:"6px",padding:"6px 10px",cursor:"pointer",fontSize:"12px"}}>
-          {show?"🙈":"👁"}
-        </button>
-        <button onClick={()=>{setApiKey(input);setSaved(true);}} style={{background:"#238636",
-          color:"#fff",border:"none",borderRadius:"6px",padding:"6px 14px",cursor:"pointer",
-          fontSize:"12px",fontWeight:"700"}}>
-          Save
-        </button>
-      </div>
-    </div>
-  );
-}
-
-export default function App() {
-  const [tab, setTab] = useState("setup");
-  const [apiKey, setApiKey] = useState("");
-  const [keySaved, setKeySaved] = useState(false);
-  const [config, setConfig] = useState({
-    niche:"SaaS Companies",customNiche:"",country:"United States",
-    service:"SEO & Content Marketing",yourName:"",yourEmail:"",
-    companyName:"",shortIntro:"",proposalTemplate:"",
-    priceRange:"$500 - $2000/month",calendlyLink:"",
-  });
-  const [running, setRunning] = useState(false);
-  const [stages, setStages] = useState({});
-  const [results, setResults] = useState({});
-  const [logs, setLogs] = useState([]);
-  const [leads, setLeads] = useState([]);
-  const [modalData, setModalData] = useState(null);
-  const [loadingAction, setLoadingAction] = useState(null);
-
-  const addLog = (msg, type="normal") => {
-    const time = new Date().toLocaleTimeString();
-    setLogs(prev=>[...prev,{msg,type,time}]);
-  };
-  const sleep = ms => new Promise(r=>setTimeout(r,ms));
-
-  const callClaude = async (prompt, system="") => {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method:"POST",
-      headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({
-        model:"claude-sonnet-4-20250514",max_tokens:1000,
-        system:system||"You are an expert business development and client acquisition specialist. Be concise, professional, and highly specific.",
-        messages:[{role:"user",content:prompt}],
-      }),
+  function makeCalLink(lead, slot) {
+    const d = new Date();
+    d.setDate(d.getDate() + slot.offset);
+    d.setHours(slot.hour || 10, 0, 0, 0);
+    return buildCalendarLink({
+      title: `Discovery Call – ${config.companyName || config.service} × ${lead?.name || "Prospect"}`,
+      description: `30-min discovery call to discuss ${config.service}.\nContact: ${lead?.contact || ""}\nEmail: ${lead?.email || ""}`,
+      startISO: d.toISOString(),
+      durationMins: 30,
+      location: config.calendlyLink || "Google Meet",
     });
-    const data = await res.json();
-    if(data.error) throw new Error(data.error.message);
-    return data.content?.map(b=>b.text||"").join("")||"";
-  };
-
-  const nicheTarget = config.niche==="Custom / Manual" ? config.customNiche : config.niche;
-
-  const runFullWorkflow = async () => {
-    if(!apiKey){alert("Please enter your Anthropic API key first!");return;}
-    if(!nicheTarget||!config.service) return;
-    setRunning(true);setLeads([]);setLogs([]);setResults({});setStages({});
-
-    // Stage 1 - Lead Research
-    setStages(s=>({...s,"Lead Research":"running"}));
-    addLog("🔍 Researching leads for: "+nicheTarget,"info");
-    try {
-      const raw = await callClaude(
-        `Generate 4 realistic fictional prospect leads for a ${config.service} agency targeting ${nicheTarget} in ${config.country}.
-Return ONLY a valid JSON array with these fields per item:
-company, contact, role, email, website, pain (specific to ${config.service}), score (50-95).
-No markdown, no explanation — raw JSON array only.`
-      );
-      let parsed=[];
-      try { parsed=JSON.parse(raw.replace(/\`\`\`json|\`\`\`/g,"").trim()); } catch{}
-      setLeads(parsed);
-      setStages(s=>({...s,"Lead Research":"done"}));
-      setResults(r=>({...r,"Lead Research":JSON.stringify(parsed,null,2)}));
-      addLog(`✅ Found ${parsed.length} qualified leads`,"success");
-    } catch(e){
-      setStages(s=>({...s,"Lead Research":"error"}));
-      addLog("❌ Lead research failed: "+e.message,"error");
-    }
-
-    await sleep(500);
-
-    // Stage 2 - Outreach Email
-    setStages(s=>({...s,"Outreach Email":"running"}));
-    addLog("✉️ Drafting personalized outreach email...","info");
-    try {
-      const email = await callClaude(
-        `Write a short personalized cold outreach email from ${config.companyName||"our agency"} (${config.yourName||"the founder"}) to a decision maker at a ${nicheTarget} company.
-Service: ${config.service} | Country: ${config.country}
-${config.shortIntro?"About us: "+config.shortIntro:""}
-Rules: Max 150 words, include subject line, no fluff, reference a real pain point, soft CTA for 15-min call.
-Use [FIRST_NAME] and [COMPANY] placeholders.`
-      );
-      setStages(s=>({...s,"Outreach Email":"done"}));
-      setResults(r=>({...r,"Outreach Email":email}));
-      addLog("✅ Outreach email ready","success");
-    } catch(e){
-      setStages(s=>({...s,"Outreach Email":"error"}));
-      addLog("❌ Email drafting failed","error");
-    }
-
-    await sleep(500);
-
-    // Stage 3 - Follow Up
-    setStages(s=>({...s,"Follow Up":"running"}));
-    addLog("🔁 Building 3-email follow-up sequence...","info");
-    try {
-      const followup = await callClaude(
-        `Write a 3-email follow-up sequence for a ${config.service} agency targeting ${nicheTarget}.
-FOLLOW-UP 1: Day 3 - gentle nudge (80 words max)
-FOLLOW-UP 2: Day 7 - add a useful insight/tip (100 words max)
-FOLLOW-UP 3: Day 14 - final breakup email (60 words max)
-Each needs a subject line. Use [FIRST_NAME] placeholder.`
-      );
-      setStages(s=>({...s,"Follow Up":"done"}));
-      setResults(r=>({...r,"Follow Up":followup}));
-      addLog("✅ 3-email sequence created","success");
-    } catch(e){
-      setStages(s=>({...s,"Follow Up":"error"}));
-      addLog("❌ Follow-up failed","error");
-    }
-
-    await sleep(500);
-
-    // Stage 4 - Proposal
-    setStages(s=>({...s,"Proposal":"running"}));
-    addLog("📄 Generating proposal template...","info");
-    try {
-      const proposal = await callClaude(
-        `Write a professional service proposal from ${config.companyName||"[Your Agency]"} to a ${nicheTarget} company for ${config.service}.
-Price range: ${config.priceRange}
-Sections: 1. Executive Summary  2. The Problem  3. Our Solution & Deliverables  4. Pricing Tiers (Starter/Growth/Premium)  5. Timeline (4 weeks)  6. Investment  7. Next Steps
-Keep it persuasive and results-focused. Use [CLIENT_NAME] placeholder.`
-      );
-      setStages(s=>({...s,"Proposal":"done"}));
-      setResults(r=>({...r,"Proposal":proposal}));
-      addLog("✅ Proposal template generated","success");
-    } catch(e){
-      setStages(s=>({...s,"Proposal":"error"}));
-      addLog("❌ Proposal failed","error");
-    }
-
-    await sleep(500);
-
-    // Stage 5 - Meeting
-    setStages(s=>({...s,"Meeting":"running"}));
-    addLog("📅 Writing meeting booking message...","info");
-    try {
-      const meeting = await callClaude(
-        `Write a short friendly message to book a 15-min discovery call with a ${nicheTarget} owner interested in ${config.service}.
-${config.calendlyLink?"Booking link: "+config.calendlyLink:"Use [BOOKING_LINK] placeholder."}
-Include: 1 value line, clear ask, 2 alt time options. Sign off from ${config.yourName||"[YOUR_NAME]"} at ${config.companyName||"[YOUR_COMPANY]"}.
-Max 80 words.`
-      );
-      setStages(s=>({...s,"Meeting":"done"}));
-      setResults(r=>({...r,"Meeting":meeting}));
-      addLog("✅ Meeting message ready","success");
-    } catch(e){
-      setStages(s=>({...s,"Meeting":"error"}));
-      addLog("❌ Meeting message failed","error");
-    }
-
-    addLog("🎉 Full workflow complete! Click any stage to view results.","success");
-    setRunning(false);
-  };
-
-  const handleLeadAction = async (lead, action) => {
-    if(!apiKey){alert("Please enter your Anthropic API key first!");return;}
-    setLoadingAction(lead.email+action);
-    try {
-      let content="";
-      if(action==="email"){
-        content=await callClaude(`Write a personalized cold email to ${lead.contact} (${lead.role}) at ${lead.company} about ${config.service}.
-Pain point: ${lead.pain}. From: ${config.yourName||"our team"} at ${config.companyName||"our agency"}.
-Max 120 words. Include subject line. Use their real name and company.`);
-        setModalData({title:`✉️ Email to ${lead.contact} @ ${lead.company}`,content});
-      } else if(action==="proposal"){
-        content=await callClaude(`Write a 1-page proposal for ${lead.company} (${lead.contact}, ${lead.role}) for ${config.service}.
-Pain: ${lead.pain}. Price: ${config.priceRange}.
-Sections: Problem → Solution → Deliverables → Investment → Next Steps. Be specific to their pain.`);
-        setModalData({title:`📄 Proposal for ${lead.company}`,content});
-      } else {
-        content=await callClaude(`Write a message to ${lead.contact} at ${lead.company} to book a 15-min call about ${config.service}.
-Pain: ${lead.pain}. ${config.calendlyLink?"Booking: "+config.calendlyLink:"Use [BOOKING_LINK]."} Max 70 words.`);
-        setModalData({title:`📅 Meeting Request to ${lead.contact}`,content});
-      }
-    } catch(e){
-      setModalData({title:"Error",content:"Failed: "+e.message});
-    }
-    setLoadingAction(null);
-  };
-
-  const pct = STAGES.filter(s=>stages[s]==="done").length/STAGES.length*100;
+  }
 
   return (
-    <div style={{minHeight:"100vh",background:"#0d1117",color:"#e6edf3",fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
-      <style>{`
-        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
-        @keyframes spin{to{transform:rotate(360deg)}}
-        *{box-sizing:border-box}
-        ::-webkit-scrollbar{width:6px}
-        ::-webkit-scrollbar-track{background:#0d1117}
-        ::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px}
-        input::placeholder,textarea::placeholder{color:#484f58}
-        select option{background:#161b22}
-      `}</style>
-
-      {/* Header */}
-      <div style={{background:"linear-gradient(135deg,#161b22 0%,#0d1117 100%)",
-        borderBottom:"1px solid #21262d",padding:"18px 24px",
-        display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"12px"}}>
-        <div>
-          <h1 style={{margin:0,fontSize:"20px",fontWeight:"800",letterSpacing:"-0.5px"}}>
-            ⚡ ClientFlow AI
-          </h1>
-          <p style={{margin:"2px 0 0",fontSize:"12px",color:"#8b949e"}}>
-            Automated Client Acquisition · Find → Email → Follow-up → Proposal → Book
-          </p>
-        </div>
-        <div style={{display:"flex",gap:"8px"}}>
-          {[["setup","⚙️ Setup"],["workflow","🚀 Workflow"],["leads","👥 Leads"]].map(([t,label])=>(
-            <button key={t} onClick={()=>setTab(t)} style={{
-              background:tab===t?"#238636":"transparent",
-              color:tab===t?"#fff":"#8b949e",
-              border:`1px solid ${tab===t?"#2ea043":"#30363d"}`,
-              borderRadius:"6px",padding:"6px 16px",fontSize:"13px",
-              cursor:"pointer",fontWeight:tab===t?"700":"400"}}>
-              {label}
-            </button>
-          ))}
-        </div>
+    <div className="meetings-tab">
+      <div className="meetings-header">
+        <h2>📅 Meeting Scheduler</h2>
+        <p className="sub">Schedule discovery calls directly to Google Calendar</p>
       </div>
 
-      {/* API Key Banner */}
-      <ApiKeyBanner apiKey={apiKey} setApiKey={setApiKey} saved={keySaved} setSaved={setKeySaved}/>
+      {leads.length === 0 && (
+        <div className="empty-state">
+          <div className="empty-icon">📅</div>
+          <p>Run the 🚀 Workflow first to generate leads, then schedule meetings here.</p>
+        </div>
+      )}
 
-      <div style={{maxWidth:"860px",margin:"0 auto",padding:"24px 16px"}}>
-
-        {/* SETUP TAB */}
-        {tab==="setup"&&(
-          <div>
-            <h2 style={{color:"#e6edf3",fontSize:"16px",marginBottom:"20px",fontWeight:"700"}}>
-              Configure Your Acquisition Settings
-            </h2>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px"}}>
-              {[
-                {label:"Target Niche / Industry",key:"niche",type:"select",options:NICHES},
-                {label:"Target Country",key:"country",type:"select",options:COUNTRIES},
-                {label:"Your Service",key:"service",type:"select",options:SERVICES},
-                {label:"Price Range",key:"priceRange",type:"text",placeholder:"$500 - $2000/month"},
-                {label:"Your Name",key:"yourName",type:"text",placeholder:"John Smith"},
-                {label:"Agency / Company Name",key:"companyName",type:"text",placeholder:"Apex Digital Agency"},
-                {label:"Your Email",key:"yourEmail",type:"text",placeholder:"you@agency.com"},
-                {label:"Calendly / Booking Link",key:"calendlyLink",type:"text",placeholder:"https://calendly.com/..."},
-              ].map(f=>(
-                <div key={f.key}>
-                  <label style={{display:"block",fontSize:"12px",color:"#8b949e",marginBottom:"6px",fontWeight:"600"}}>
-                    {f.label}
-                  </label>
-                  {f.type==="select"
-                    ? <select value={config[f.key]} onChange={e=>setConfig(c=>({...c,[f.key]:e.target.value}))} style={inputStyle}>
-                        {f.options.map(o=><option key={o}>{o}</option>)}
-                      </select>
-                    : <input value={config[f.key]} onChange={e=>setConfig(c=>({...c,[f.key]:e.target.value}))}
-                        placeholder={f.placeholder} style={inputStyle}/>
-                  }
-                </div>
+      <div className="meetings-grid">
+        {leads.map((lead, li) => (
+          <div key={li} className="meeting-card">
+            <div className="meeting-card-header">
+              <div>
+                <strong>{lead.name}</strong>
+                <div className="meeting-sub">{lead.contact} · {lead.email}</div>
+              </div>
+              <span className="tag">{lead.size}</span>
+            </div>
+            <div className="meeting-pain">💡 {lead.pain_point}</div>
+            <div className="slots-label">📆 Pick a slot:</div>
+            <div className="slots">
+              {slots.map((slot, si) => (
+                <a
+                  key={si}
+                  href={makeCalLink(lead, slot)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="slot-btn"
+                >
+                  🗓 {slot.label}
+                </a>
               ))}
             </div>
-            {config.niche==="Custom / Manual"&&(
-              <div style={{marginTop:"14px"}}>
-                <label style={{display:"block",fontSize:"12px",color:"#8b949e",marginBottom:"6px",fontWeight:"600"}}>
-                  Describe Your Custom Niche
-                </label>
-                <input value={config.customNiche} onChange={e=>setConfig(c=>({...c,customNiche:e.target.value}))}
-                  placeholder="e.g. Luxury Wedding Photographers in London" style={inputStyle}/>
-              </div>
+            {config.calendlyLink && (
+              <a href={config.calendlyLink} target="_blank" rel="noreferrer" className="btn-primary calendly-btn">
+                📎 Open Calendly Link
+              </a>
             )}
-            <div style={{marginTop:"14px"}}>
-              <label style={{display:"block",fontSize:"12px",color:"#8b949e",marginBottom:"6px",fontWeight:"600"}}>
-                Short Agency Intro (used to personalize all outreach)
-              </label>
-              <textarea value={config.shortIntro} onChange={e=>setConfig(c=>({...c,shortIntro:e.target.value}))}
-                placeholder="e.g. We help SaaS companies grow organic traffic by 300% in 6 months using proven SEO frameworks..."
-                rows={3} style={{...inputStyle,resize:"vertical"}}/>
-            </div>
-            <button onClick={()=>setTab("workflow")} style={{
-              marginTop:"20px",background:"#238636",color:"#fff",border:"none",
-              borderRadius:"8px",padding:"12px 28px",fontSize:"14px",fontWeight:"700",cursor:"pointer"}}>
-              Save & Go to Workflow →
-            </button>
           </div>
-        )}
-
-        {/* WORKFLOW TAB */}
-        {tab==="workflow"&&(
-          <div>
-            <div style={{background:"rgba(35,134,54,0.1)",border:"1px solid #2d6a4f",borderRadius:"10px",
-              padding:"16px 20px",marginBottom:"20px",display:"flex",
-              justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"12px"}}>
-              <div>
-                <div style={{fontSize:"13px",color:"#68d391",fontWeight:"700"}}>Active Configuration</div>
-                <div style={{fontSize:"12px",color:"#8b949e",marginTop:"4px"}}>
-                  <span style={{color:"#c9d1d9"}}>{nicheTarget||"(no niche set)"}</span> ·{" "}
-                  <span style={{color:"#c9d1d9"}}>{config.service}</span> ·{" "}
-                  <span style={{color:"#c9d1d9"}}>{config.country}</span>
-                </div>
-              </div>
-              <button onClick={runFullWorkflow} disabled={running} style={{
-                background:running?"#21262d":"linear-gradient(135deg,#238636,#196127)",
-                color:running?"#484f58":"#fff",border:"none",borderRadius:"8px",
-                padding:"10px 24px",fontSize:"14px",fontWeight:"700",
-                cursor:running?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:"8px"}}>
-                {running
-                  ? <><span style={{display:"inline-block",width:"14px",height:"14px",border:"2px solid #484f58",
-                      borderTopColor:"#8b949e",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/> Running...</>
-                  : "🚀 Run Full Workflow"}
-              </button>
-            </div>
-
-            {Object.keys(stages).length>0&&(
-              <div style={{marginBottom:"16px"}}>
-                <div style={{display:"flex",justifyContent:"space-between",fontSize:"12px",color:"#8b949e",marginBottom:"6px"}}>
-                  <span>Progress</span><span>{Math.round(pct)}%</span>
-                </div>
-                <div style={{height:"6px",background:"#21262d",borderRadius:"3px",overflow:"hidden"}}>
-                  <div style={{height:"100%",width:pct+"%",background:"linear-gradient(90deg,#238636,#3fb950)",
-                    borderRadius:"3px",transition:"width 0.5s ease"}}/>
-                </div>
-              </div>
-            )}
-
-            {STAGES.map((stage,i)=>(
-              <StageCard key={stage} stage={stage} status={stages[stage]||"idle"} result={results[stage]} index={i}/>
-            ))}
-
-            <div style={{marginTop:"20px"}}>
-              <div style={{fontSize:"12px",color:"#8b949e",marginBottom:"8px",fontWeight:"600"}}>📟 Activity Log</div>
-              <TerminalLog logs={logs}/>
-            </div>
-          </div>
-        )}
-
-        {/* LEADS TAB */}
-        {tab==="leads"&&(
-          <div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"20px"}}>
-              <div>
-                <h2 style={{color:"#e6edf3",fontSize:"16px",margin:0,fontWeight:"700"}}>Qualified Leads</h2>
-                <p style={{color:"#8b949e",fontSize:"12px",margin:"4px 0 0"}}>
-                  {leads.length>0?`${leads.length} leads · ${nicheTarget}`:"Run the workflow first to find leads"}
-                </p>
-              </div>
-              {leads.length>0&&(
-                <span style={{fontSize:"12px",padding:"4px 12px",borderRadius:"20px",
-                  background:"rgba(104,211,145,0.1)",color:"#68d391",border:"1px solid #2d6a4f"}}>
-                  ✓ {leads.length} Active
-                </span>
-              )}
-            </div>
-
-            {leads.length===0
-              ? <div style={{textAlign:"center",padding:"60px 20px",color:"#484f58",
-                  border:"1px dashed #21262d",borderRadius:"12px"}}>
-                  <div style={{fontSize:"40px",marginBottom:"12px"}}>🔍</div>
-                  <div style={{fontSize:"14px"}}>No leads yet.</div>
-                  <div style={{fontSize:"12px",marginTop:"6px"}}>
-                    Go to <strong style={{color:"#8b949e"}}>🚀 Workflow</strong> and click Run Full Workflow
-                  </div>
-                </div>
-              : leads.map((lead,i)=>(
-                  <LeadCard key={i} lead={lead} onAction={handleLeadAction} loadingAction={loadingAction}/>
-                ))
-            }
-          </div>
-        )}
+        ))}
       </div>
 
-      {modalData&&<Modal title={modalData.title} content={modalData.content} onClose={()=>setModalData(null)}/>}
+      <div className="gcal-info card">
+        <h3>ℹ️ How Google Calendar Integration Works</h3>
+        <ol>
+          <li>Click any slot button above — it opens Google Calendar pre-filled with meeting details.</li>
+          <li>Review the event (title, time, description) then click <strong>Save</strong>.</li>
+          <li>Google Calendar will send invites to guests you add.</li>
+          <li>Add your Calendly link in ⚙️ Setup to share a self-booking link with leads.</li>
+        </ol>
+      </div>
     </div>
   );
 }
+
+// ── Root App ──────────────────────────────────────────────────────────────────
+export default function App() {
+  const [tab, setTab] = useState(0);
+  const [apiKey, setApiKey] = useState(() => sessionStorage.getItem("cf_key") || "");
+  const [config, setConfig] = useState(DEFAULT_CONFIG);
+  const [stages, setStages] = useState({});
+  const [logs, setLogs] = useState([]);
+  const [running, setRunning] = useState(false);
+
+  useEffect(() => {
+    if (apiKey) sessionStorage.setItem("cf_key", apiKey);
+  }, [apiKey]);
+
+  return (
+    <div className="app">
+      <header className="header">
+        <div className="header-top">
+          <div className="logo">
+            <span className="logo-icon">⚡</span>
+            <div>
+              <div className="logo-name">ClientFlow AI</div>
+              <div className="logo-sub">Automated Client Acquisition · Find → Email → Follow-up → Proposal → Book</div>
+            </div>
+          </div>
+        </div>
+        <ApiKeyBanner apiKey={apiKey} setApiKey={setApiKey} />
+        <nav className="tabs">
+          {TABS.map((t, i) => (
+            <button key={i} className={`tab ${tab === i ? "active" : ""}`} onClick={() => setTab(i)}>{t}</button>
+          ))}
+        </nav>
+      </header>
+
+      <main className="main">
+        {tab === 0 && <SetupTab config={config} setConfig={setConfig} />}
+        {tab === 1 && (
+          <WorkflowTab
+            config={config} apiKey={apiKey}
+            stages={stages} setStages={setStages}
+            logs={logs} setLogs={setLogs}
+            running={running} setRunning={setRunning}
+          />
+        )}
+        {tab === 2 && <LeadsTab apiKey={apiKey} config={config} stages={stages} />}
+        {tab === 3 && <MeetingsTab config={config} stages={stages} />}
+      </main>
+    </div>
+  );
+}
+
