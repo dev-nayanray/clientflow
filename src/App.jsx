@@ -1,172 +1,123 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   REAL_LEAD_SOURCES, hunterDomainSearch, hunterCompanySearch,
   apolloSearch, googlePlacesSearch, parseCSVLeads
 } from "./RealLeadFinder";
+import {
+  initGmailAuth, gmailSend, gmailListSent, gmailGetMessage,
+  getGmailToken, setGmailToken, clearGmailToken,
+  getGmailProfile, parseEmailText
+} from "./GmailSender";
 
-// ── constants ─────────────────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
 const MODEL = "claude-sonnet-4-5";
-
-const NICHES = [
-  "E-commerce Stores","SaaS Companies","Real Estate Agencies","Law Firms",
-  "Medical Clinics","Dental Offices","Gyms & Fitness Studios","Restaurants & Cafés",
-  "Online Coaches & Consultants","Digital Marketing Agencies","Accounting & CPA Firms",
-  "Insurance Agencies","Mortgage Brokers","Recruitment & HR Firms","IT & Tech Startups",
-  "Photography Studios","Interior Design Firms","Construction Companies",
-  "Logistics & Freight","Education & eLearning Platforms",
-];
-const SERVICES = [
-  "Web Design & Development","SEO & Content Marketing","Social Media Management",
-  "Google & Facebook Ads","Email Marketing Automation","Video Production & Editing",
-  "Branding & Logo Design","Mobile App Development","CRM & Sales Automation",
-  "Chatbot Development","Shopify / WooCommerce Setup","WordPress Development",
-  "Lead Generation Systems","Business Process Automation","Data Analytics & Reporting",
-  "Virtual Assistant Services","Copywriting & Content Creation","LinkedIn Outreach",
-  "Podcast Production","E-learning Course Creation",
-];
+const NICHES = ["E-commerce Stores","SaaS Companies","Real Estate Agencies","Law Firms","Medical Clinics","Dental Offices","Gyms & Fitness Studios","Restaurants & Cafés","Online Coaches & Consultants","Digital Marketing Agencies","Accounting & CPA Firms","Insurance Agencies","Mortgage Brokers","Recruitment & HR Firms","IT & Tech Startups","Photography Studios","Interior Design Firms","Construction Companies","Logistics & Freight","Education & eLearning Platforms"];
+const SERVICES = ["Web Design & Development","SEO & Content Marketing","Social Media Management","Google & Facebook Ads","Email Marketing Automation","Video Production & Editing","Branding & Logo Design","Mobile App Development","CRM & Sales Automation","Chatbot Development","Shopify / WooCommerce Setup","WordPress Development","Lead Generation Systems","Business Process Automation","Data Analytics & Reporting","Virtual Assistant Services","Copywriting & Content Creation","LinkedIn Outreach","Podcast Production","E-learning Course Creation"];
 const COUNTRIES = [
-  { name:"United States",code:"US",flag:"🇺🇸",tier:"premium" },
-  { name:"United Kingdom",code:"GB",flag:"🇬🇧",tier:"premium" },
-  { name:"Canada",code:"CA",flag:"🇨🇦",tier:"premium" },
-  { name:"Australia",code:"AU",flag:"🇦🇺",tier:"premium" },
-  { name:"Germany",code:"DE",flag:"🇩🇪",tier:"premium" },
-  { name:"Netherlands",code:"NL",flag:"🇳🇱",tier:"premium" },
-  { name:"Singapore",code:"SG",flag:"🇸🇬",tier:"premium" },
-  { name:"UAE",code:"AE",flag:"🇦🇪",tier:"premium" },
-  { name:"New Zealand",code:"NZ",flag:"🇳🇿",tier:"premium" },
-  { name:"Switzerland",code:"CH",flag:"🇨🇭",tier:"premium" },
-  { name:"India",code:"IN",flag:"🇮🇳",tier:"growth" },
-  { name:"Bangladesh",code:"BD",flag:"🇧🇩",tier:"growth" },
-  { name:"Pakistan",code:"PK",flag:"🇵🇰",tier:"growth" },
-  { name:"Philippines",code:"PH",flag:"🇵🇭",tier:"growth" },
-  { name:"Vietnam",code:"VN",flag:"🇻🇳",tier:"growth" },
-  { name:"Indonesia",code:"ID",flag:"🇮🇩",tier:"growth" },
-  { name:"Malaysia",code:"MY",flag:"🇲🇾",tier:"growth" },
-  { name:"Nigeria",code:"NG",flag:"🇳🇬",tier:"growth" },
-  { name:"Kenya",code:"KE",flag:"🇰🇪",tier:"growth" },
-  { name:"South Africa",code:"ZA",flag:"🇿🇦",tier:"growth" },
-  { name:"Brazil",code:"BR",flag:"🇧🇷",tier:"growth" },
-  { name:"Mexico",code:"MX",flag:"🇲🇽",tier:"growth" },
-  { name:"Colombia",code:"CO",flag:"🇨🇴",tier:"growth" },
-  { name:"France",code:"FR",flag:"🇫🇷",tier:"premium" },
-  { name:"Spain",code:"ES",flag:"🇪🇸",tier:"premium" },
-  { name:"Italy",code:"IT",flag:"🇮🇹",tier:"premium" },
-  { name:"Japan",code:"JP",flag:"🇯🇵",tier:"premium" },
-  { name:"South Korea",code:"KR",flag:"🇰🇷",tier:"premium" },
-  { name:"Sweden",code:"SE",flag:"🇸🇪",tier:"premium" },
-  { name:"Denmark",code:"DK",flag:"🇩🇰",tier:"premium" },
+  {name:"United States",code:"US",flag:"🇺🇸",tier:"premium"},{name:"United Kingdom",code:"GB",flag:"🇬🇧",tier:"premium"},
+  {name:"Canada",code:"CA",flag:"🇨🇦",tier:"premium"},{name:"Australia",code:"AU",flag:"🇦🇺",tier:"premium"},
+  {name:"Germany",code:"DE",flag:"🇩🇪",tier:"premium"},{name:"Netherlands",code:"NL",flag:"🇳🇱",tier:"premium"},
+  {name:"Singapore",code:"SG",flag:"🇸🇬",tier:"premium"},{name:"UAE",code:"AE",flag:"🇦🇪",tier:"premium"},
+  {name:"New Zealand",code:"NZ",flag:"🇳🇿",tier:"premium"},{name:"Switzerland",code:"CH",flag:"🇨🇭",tier:"premium"},
+  {name:"India",code:"IN",flag:"🇮🇳",tier:"growth"},{name:"Bangladesh",code:"BD",flag:"🇧🇩",tier:"growth"},
+  {name:"Pakistan",code:"PK",flag:"🇵🇰",tier:"growth"},{name:"Philippines",code:"PH",flag:"🇵🇭",tier:"growth"},
+  {name:"Vietnam",code:"VN",flag:"🇻🇳",tier:"growth"},{name:"Indonesia",code:"ID",flag:"🇮🇩",tier:"growth"},
+  {name:"Malaysia",code:"MY",flag:"🇲🇾",tier:"growth"},{name:"Nigeria",code:"NG",flag:"🇳🇬",tier:"growth"},
+  {name:"Kenya",code:"KE",flag:"🇰🇪",tier:"growth"},{name:"South Africa",code:"ZA",flag:"🇿🇦",tier:"growth"},
+  {name:"Brazil",code:"BR",flag:"🇧🇷",tier:"growth"},{name:"Mexico",code:"MX",flag:"🇲🇽",tier:"growth"},
+  {name:"Colombia",code:"CO",flag:"🇨🇴",tier:"growth"},{name:"France",code:"FR",flag:"🇫🇷",tier:"premium"},
+  {name:"Spain",code:"ES",flag:"🇪🇸",tier:"premium"},{name:"Italy",code:"IT",flag:"🇮🇹",tier:"premium"},
+  {name:"Japan",code:"JP",flag:"🇯🇵",tier:"premium"},{name:"South Korea",code:"KR",flag:"🇰🇷",tier:"premium"},
+  {name:"Sweden",code:"SE",flag:"🇸🇪",tier:"premium"},{name:"Denmark",code:"DK",flag:"🇩🇰",tier:"premium"},
 ];
 const NICHE_COUNTRY_REC = {
-  "E-commerce Stores":["US","GB","CA","AU","IN"],
-  "SaaS Companies":["US","GB","CA","DE","SG"],
-  "Real Estate Agencies":["US","GB","AU","AE","CA"],
-  "Law Firms":["US","GB","CA","AU","SG"],
-  "Medical Clinics":["US","GB","AU","CA","AE"],
-  "Dental Offices":["US","CA","AU","GB","AE"],
-  "Gyms & Fitness Studios":["US","GB","CA","AU","IN"],
-  "Restaurants & Cafés":["US","GB","AU","CA","SG"],
-  "Online Coaches & Consultants":["US","GB","CA","AU","IN"],
-  "Digital Marketing Agencies":["US","IN","GB","PH","BD"],
+  "E-commerce Stores":["US","GB","CA","AU","IN"],"SaaS Companies":["US","GB","CA","DE","SG"],
+  "Real Estate Agencies":["US","GB","AU","AE","CA"],"Law Firms":["US","GB","CA","AU","SG"],
+  "Medical Clinics":["US","GB","AU","CA","AE"],"Dental Offices":["US","CA","AU","GB","AE"],
+  "Gyms & Fitness Studios":["US","GB","CA","AU","IN"],"Restaurants & Cafés":["US","GB","AU","CA","SG"],
+  "Online Coaches & Consultants":["US","GB","CA","AU","IN"],"Digital Marketing Agencies":["US","IN","GB","PH","BD"],
   "IT & Tech Startups":["US","IN","GB","SG","DE"],
 };
-function getRecCountries(niche){
-  const codes=(NICHE_COUNTRY_REC[niche]||["US","GB","CA","AU","IN"]);
-  return codes.map(c=>COUNTRIES.find(co=>co.code===c)).filter(Boolean);
-}
+function getRecCountries(n){const c=(NICHE_COUNTRY_REC[n]||["US","GB","CA","AU","IN"]);return c.map(x=>COUNTRIES.find(co=>co.code===x)).filter(Boolean);}
 
 const SOCIAL_PLATFORMS = [
-  { key:"linkedin",name:"LinkedIn",icon:"💼",color:"#0077B5",bgColor:"#E8F4FD",
-    description:"Best for B2B — decision makers, CEOs, founders",
-    searchUrl:(n,c)=>`https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(n+" "+c)}&origin=GLOBAL_SEARCH_HEADER`,
-    companyUrl:(n,c)=>`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(n+" "+c)}`,
-    searchTips:["Search: \"[Niche] [Country]\" in People tab","Filter: 2nd degree connections","Filter: Company size 11–200 for SMBs","Sort: Most recent activity"],
-    outreachTips:["Connect with a personalized note (300 chars)","Message after connection accepted","Engage with posts before pitching","Use Sales Navigator for filters"],
-  },
-  { key:"instagram",name:"Instagram",icon:"📸",color:"#E1306C",bgColor:"#FDF0F5",
-    description:"Great for visual businesses — restaurants, fitness, real estate",
-    searchUrl:(n)=>`https://www.instagram.com/explore/tags/${encodeURIComponent(n.toLowerCase().replace(/\s+/g,""))}`,
-    searchTips:["Search hashtags: #[niche] #[city]business","Accounts 500–50K followers (sweet spot)","Check 'similar accounts' on competitors","Use location tags"],
-    outreachTips:["DM after liking/commenting 2–3 posts","Mention specific content from their profile","Use voice DM for higher open rates","Check bio for email first"],
-  },
-  { key:"x",name:"X (Twitter)",icon:"𝕏",color:"#14171A",bgColor:"#F5F8FA",
-    description:"Ideal for SaaS, tech, coaches — founders are very active",
-    searchUrl:(n,c)=>`https://twitter.com/search?q=${encodeURIComponent(n+" "+c+" founder")}&f=user`,
-    searchTips:["Search: \"[Niche] founder\" or \"[Niche] CEO\"","Advanced Search: min_faves:10 for active users","Check who replies to industry influencers","Search: 'looking for [service]' for warm leads"],
-    outreachTips:["Reply to tweets with value first","Retweet with meaningful comment","DM after 2–3 genuine interactions","Reference a specific tweet in your DM"],
-  },
+  {key:"linkedin",name:"LinkedIn",icon:"💼",color:"#0077B5",bgColor:"#E8F4FD",description:"Best for B2B — decision makers, CEOs, founders",
+   searchUrl:(n,c)=>`https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(n+" "+c)}`,
+   companyUrl:(n,c)=>`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(n+" "+c)}`,
+   searchTips:["Search: \"[Niche] [Country]\" in People tab","Filter: 2nd degree connections","Filter: Company size 11–200","Sort: Most recent activity"],
+   outreachTips:["Connect with personalized note (300 chars)","Message after connection accepted","Engage with posts before pitching","Use Sales Navigator for filters"]},
+  {key:"instagram",name:"Instagram",icon:"📸",color:"#E1306C",bgColor:"#FDF0F5",description:"Great for visual businesses — restaurants, fitness, real estate",
+   searchUrl:(n)=>`https://www.instagram.com/explore/tags/${encodeURIComponent(n.toLowerCase().replace(/\s+/g,""))}`,
+   searchTips:["Search hashtags: #[niche] #[city]business","Accounts 500–50K followers","Check 'similar accounts' on competitors","Use location tags"],
+   outreachTips:["DM after liking/commenting 2–3 posts","Mention specific content","Voice DM for higher open rates","Check bio for email first"]},
+  {key:"x",name:"X (Twitter)",icon:"𝕏",color:"#14171A",bgColor:"#F5F8FA",description:"Ideal for SaaS, tech, coaches — founders very active",
+   searchUrl:(n,c)=>`https://twitter.com/search?q=${encodeURIComponent(n+" "+c+" founder")}&f=user`,
+   searchTips:["Search: \"[Niche] founder\" or \"[Niche] CEO\"","Advanced: min_faves:10 for active users","Check who replies to industry influencers","Search: 'looking for [service]'"],
+   outreachTips:["Reply to tweets with value first","Retweet with meaningful comment","DM after 2–3 genuine interactions","Reference a specific tweet in DM"]},
 ];
 
-// ── helpers ───────────────────────────────────────────────────────────────────
-async function callClaude(apiKey, systemPrompt, userPrompt) {
+// ── Helpers ───────────────────────────────────────────────────────────────────
+async function callClaude(apiKey, sys, user) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method:"POST",
-    headers:{ "Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true" },
-    body:JSON.stringify({ model:MODEL, max_tokens:1500, system:systemPrompt, messages:[{role:"user",content:userPrompt}] }),
+    headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({model:MODEL,max_tokens:1500,system:sys,messages:[{role:"user",content:user}]}),
   });
-  if(!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e?.error?.message||`HTTP ${res.status}`); }
-  const data=await res.json();
-  return data.content.map(b=>b.text||"").join("");
+  if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e?.error?.message||`HTTP ${res.status}`);}
+  return (await res.json()).content.map(b=>b.text||"").join("");
 }
-function parseJSON(raw){ try{ return JSON.parse(raw.replace(/```json|```/g,"").trim()); }catch{ return null; } }
+function parseJSON(raw){try{return JSON.parse(raw.replace(/```json|```/g,"").trim());}catch{return null;}}
 function buildCalendarLink({title,description,startISO,durationMins=60,location=""}){
   const fmt=d=>d.toISOString().replace(/[-:]/g,"").split(".")[0]+"Z";
-  const start=new Date(startISO);const end=new Date(start.getTime()+durationMins*60000);
-  return `https://calendar.google.com/calendar/render?${new URLSearchParams({action:"TEMPLATE",text:title,details:description,location,dates:`${fmt(start)}/${fmt(end)}`})}`;
+  const s=new Date(startISO),e=new Date(s.getTime()+durationMins*60000);
+  return `https://calendar.google.com/calendar/render?${new URLSearchParams({action:"TEMPLATE",text:title,details:description,location,dates:`${fmt(s)}/${fmt(e)}`})}`;
 }
 
-// ── Google Sheets ─────────────────────────────────────────────────────────────
+// ── Sheets ────────────────────────────────────────────────────────────────────
 async function appendSheet(sc,rows,sheet="Leads"){
   if(!sc?.apiKey||!sc?.sheetId) throw new Error("Sheets credentials missing");
   const url=`https://sheets.googleapis.com/v4/spreadsheets/${sc.sheetId}/values/${encodeURIComponent(sheet+"!A1")}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS&key=${sc.apiKey}`;
   const res=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({values:rows})});
-  if(!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e?.error?.message||`Sheets ${res.status}`); }
+  if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e?.error?.message||`Sheets ${res.status}`);}
   return res.json();
 }
 async function initHeaders(sc,sheet,headers){
   if(!sc?.apiKey||!sc?.sheetId) return;
   const r=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sc.sheetId}/values/${encodeURIComponent(sheet+"!A1")}?key=${sc.apiKey}`);
   if(!r.ok) return;
-  const d=await r.json();
-  if(d.values?.length>0) return;
+  const d=await r.json();if(d.values?.length>0) return;
   await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sc.sheetId}/values/${encodeURIComponent(sheet+"!A1")}?valueInputOption=USER_ENTERED&key=${sc.apiKey}`,
     {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({values:[headers]})});
 }
 async function exportLeads(sc,leads,cfg){
-  const h=["Timestamp","Business Name","Contact","Title","Email","Website","Phone","Size","Pain Point","Source","Niche","Service","Country","Verified"];
-  await initHeaders(sc,"Leads",h);
+  await initHeaders(sc,"Leads",["Timestamp","Business Name","Contact","Title","Email","Website","Phone","Size","Pain Point","Source","Niche","Service","Country","Verified"]);
   const ts=new Date().toLocaleString();
   await appendSheet(sc,leads.map(l=>[ts,l.name||"",l.contact||"",l.title||"",l.email||"",l.website||"",l.phone||"",l.size||"",l.pain_point||"",l.platform||"",cfg.niche||"",cfg.service||"",cfg.country||"",l.verified?"✅":"❓"]),"Leads");
 }
 async function exportWorkflow(sc,stages,cfg){
-  const h=["Timestamp","Niche","Service","Country","Company","Stage","Status","Content Preview"];
-  await initHeaders(sc,"Workflows",h);
-  const ts=new Date().toLocaleString();
-  const labels={leads:"Lead Research",email:"Outreach Email",followup:"Follow Up",proposal:"Proposal",meeting:"Meeting"};
-  const rows=Object.entries(stages).filter(([,v])=>v?.status==="done").map(([k,v])=>{
-    const content=Array.isArray(v.result)?`${v.result.length} leads`:(v.result||"").substring(0,200);
-    return [ts,cfg.niche,cfg.service,cfg.country,cfg.companyName||cfg.yourName,labels[k]||k,"Completed",content];
-  });
+  await initHeaders(sc,"Workflows",["Timestamp","Niche","Service","Country","Company","Stage","Status","Content Preview"]);
+  const ts=new Date().toLocaleString();const labels={leads:"Lead Research",email:"Outreach Email",followup:"Follow Up",proposal:"Proposal",meeting:"Meeting"};
+  const rows=Object.entries(stages).filter(([,v])=>v?.status==="done").map(([k,v])=>[ts,cfg.niche,cfg.service,cfg.country,cfg.companyName||cfg.yourName,labels[k]||k,"Completed",(Array.isArray(v.result)?`${v.result.length} leads`:(v.result||"").substring(0,200))]);
   if(rows.length>0) await appendSheet(sc,rows,"Workflows");
 }
 async function exportAction(sc,lead,type,content,cfg){
-  const h=["Timestamp","Business Name","Contact","Email","Source","Action","Niche","Service","Country","Content"];
-  await initHeaders(sc,"Actions",h);
+  await initHeaders(sc,"Actions",["Timestamp","Business Name","Contact","Email","Source","Action","Niche","Service","Country","Content"]);
   await appendSheet(sc,[[new Date().toLocaleString(),lead.name,lead.contact,lead.email,lead.platform||"",type,cfg.niche,cfg.service,cfg.country,content.substring(0,300)]],"Actions");
+}
+async function logSentEmail(sc,{to,subject,lead,cfg}){
+  await initHeaders(sc,"Sent Emails",["Timestamp","To","Subject","Business","Contact","Niche","Service","Country","Status"]);
+  await appendSheet(sc,[[new Date().toLocaleString(),to,subject,lead?.name||"",lead?.contact||"",cfg.niche,cfg.service,cfg.country,"✅ Sent"]],"Sent Emails");
 }
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
-const TABS=["⚙️ Setup","📥 Real Leads","🔍 Social Find","🚀 Workflow","👥 Pipeline","📅 Meetings","📊 Data Store"];
-const DEFAULT_CONFIG={ niche:"E-commerce Stores",service:"Web Design & Development",country:"United States",price:"$500 – $2,000",calendlyLink:"",yourName:"",yourEmail:"",companyName:"" };
-const DEFAULT_SHEETS={ apiKey:"",sheetId:"",enabled:false };
-const DEFAULT_API_KEYS={ hunter:"",apollo:"",places:"" };
+const TABS=["⚙️ Setup","📥 Real Leads","🔍 Social","🚀 Workflow","📧 Send Emails","👥 Pipeline","📅 Meetings","📊 Data Store"];
+const DEFAULT_CONFIG={niche:"E-commerce Stores",service:"Web Design & Development",country:"United States",price:"$500 – $2,000",calendlyLink:"",yourName:"",yourEmail:"",companyName:"",googleClientId:""};
+const DEFAULT_SHEETS={apiKey:"",sheetId:"",enabled:false};
+const DEFAULT_API_KEYS={hunter:"",apollo:"",places:""};
 const STAGE_KEYS=["leads","email","followup","proposal","meeting"];
-const STAGE_META=[
-  {key:"leads",icon:"🔍",label:"Lead Research"},
-  {key:"email",icon:"✉️",label:"Outreach Email"},
-  {key:"followup",icon:"🔁",label:"Follow Up"},
-  {key:"proposal",icon:"📄",label:"Proposal"},
-  {key:"meeting",icon:"📅",label:"Meeting"},
-];
+const STAGE_META=[{key:"leads",icon:"🔍",label:"Lead Research"},{key:"email",icon:"✉️",label:"Outreach Email"},{key:"followup",icon:"🔁",label:"Follow Up"},{key:"proposal",icon:"📄",label:"Proposal"},{key:"meeting",icon:"📅",label:"Meeting"}];
+const PIPELINE_STAGES=["New","Contacted","Replied","Meeting Booked","Proposal Sent","Won","Lost"];
+const PIPELINE_COLORS={New:"#64748b",Contacted:"#3b82f6",Replied:"#f59e0b","Meeting Booked":"#8b5cf6","Proposal Sent":"#ec4899",Won:"#22c55e",Lost:"#ef4444"};
 
 // ── Reusable UI ───────────────────────────────────────────────────────────────
 function SearchableDropdown({label,value,onChange,options,placeholder,renderOption,renderValue,icon}){
@@ -179,7 +130,7 @@ function SearchableDropdown({label,value,onChange,options,placeholder,renderOpti
         <span className={value?"dropdown-val":"dropdown-placeholder"}>{value?(renderValue?renderValue(value):value):placeholder}</span>
         <span className="dropdown-arrow">{open?"▲":"▼"}</span>
       </button>
-      {open&&(<div className="dropdown-menu">
+      {open&&<div className="dropdown-menu">
         <div className="dropdown-search-wrap"><input autoFocus className="dropdown-search" placeholder="Search…" value={search} onChange={e=>setSearch(e.target.value)}/></div>
         <div className="dropdown-list">
           {filtered.length===0&&<div className="dropdown-empty">No results</div>}
@@ -188,11 +139,10 @@ function SearchableDropdown({label,value,onChange,options,placeholder,renderOpti
               {renderOption?renderOption(opt):opt}{value===v&&<span className="dropdown-check">✓</span>}
             </div>);})}
         </div>
-      </div>)}
+      </div>}
     </div>
   </div>);
 }
-
 function CountrySelector({value,onChange,niche}){
   const [mode,setMode]=useState("recommended");
   const rec=getRecCountries(niche);const cur=COUNTRIES.find(c=>c.name===value);
@@ -213,13 +163,11 @@ function CountrySelector({value,onChange,niche}){
     {cur&&<div className="country-selected-info"><span>{cur.flag}</span><strong>{cur.name}</strong><span className={`tier-badge ${cur.tier}`}>{cur.tier==="premium"?"High-budget":"Growth"}</span></div>}
   </div>);
 }
-
 function ApiKeyBanner({apiKey,setApiKey}){
   const [draft,setDraft]=useState(apiKey);const [show,setShow]=useState(false);const [saved,setSaved]=useState(false);
   const save=()=>{setApiKey(draft.trim());setSaved(true);setTimeout(()=>setSaved(false),2000);};
   return(<div className="api-banner">
-    <span className="api-label">🔑 Anthropic API Key</span>
-    {apiKey&&<span className="api-ok">✓ Saved</span>}
+    <span className="api-label">🔑 Anthropic API Key</span>{apiKey&&<span className="api-ok">✓ Saved</span>}
     <div className="api-row">
       <input className="api-input" type={show?"text":"password"} placeholder="sk-ant-…" value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>e.key==="Enter"&&save()}/>
       <button className="btn-ghost" onClick={()=>setShow(!show)}>{show?"🙈":"👁"}</button>
@@ -228,10 +176,50 @@ function ApiKeyBanner({apiKey,setApiKey}){
   </div>);
 }
 
-// ── Setup Tab ─────────────────────────────────────────────────────────────────
+// ── Send Approval Modal ───────────────────────────────────────────────────────
+function SendApprovalModal({draft,onConfirm,onCancel,sending,gmailProfile}){
+  const [subject,setSubject]=useState(draft.subject||"");
+  const [body,setBody]=useState(draft.body||"");
+  const [to,setTo]=useState(draft.to||"");
+  return(<div className="modal-overlay">
+    <div className="modal send-modal">
+      <div className="modal-header">
+        <h3>📧 Review & Send Email</h3>
+        <button className="modal-close" onClick={onCancel}>✕</button>
+      </div>
+      <div className="modal-body">
+        <div className="send-from-badge">
+          <span>📤 Sending from:</span>
+          <strong>{gmailProfile?.emailAddress||"Your Gmail"}</strong>
+        </div>
+        <div className="field">
+          <label>To</label>
+          <input type="email" value={to} onChange={e=>setTo(e.target.value)} placeholder="recipient@company.com"/>
+        </div>
+        <div className="field">
+          <label>Subject</label>
+          <input type="text" value={subject} onChange={e=>setSubject(e.target.value)}/>
+        </div>
+        <div className="field">
+          <label>Email Body</label>
+          <textarea className="email-body-edit" value={body} onChange={e=>setBody(e.target.value)} rows={12}/>
+        </div>
+        <div className="send-modal-actions">
+          <button className="btn-ghost" onClick={onCancel} disabled={sending}>Cancel</button>
+          <button className="btn-send" onClick={()=>onConfirm({to,subject,body})} disabled={sending||!to||!subject||!body}>
+            {sending?"⏳ Sending…":"📤 Send from Gmail"}
+          </button>
+        </div>
+        <p className="send-note">✅ You're reviewing before sending — nothing goes out until you click Send.</p>
+      </div>
+    </div>
+  </div>);
+}
+
+// ── Gmail Setup in Setup Tab ──────────────────────────────────────────────────
 function SetupTab({config,setConfig,sheetsConfig,setSheetsConfig,apiKeys,setApiKeys}){
   const f=(key,label,ph,type="text")=>(<div className="field"><label>{label}</label>
-    <input type={type} placeholder={ph} value={config[key]} onChange={e=>setConfig(c=>({...c,[key]:e.target.value}))}/></div>);
+    <input type={type} placeholder={ph} value={config[key]||""} onChange={e=>setConfig(c=>({...c,[key]:e.target.value}))}/></div>);
   return(<div className="setup-wrap">
     <div className="setup-grid">
       <div className="card">
@@ -248,36 +236,48 @@ function SetupTab({config,setConfig,sheetsConfig,setSheetsConfig,apiKeys,setApiK
         {f("companyName","🏷️ Company Name","Rubel SBS")}
         {f("calendlyLink","📅 Calendly Link","https://calendly.com/you")}
       </div>
-
-      {/* Real API Keys */}
       <div className="card api-keys-card">
-        <h3>🔑 Real Lead Source API Keys</h3>
-        <p className="hint" style={{marginTop:0,marginBottom:12}}>Add these to find <strong>real verified contacts</strong> instead of fake AI data.</p>
+        <h3>🔑 Lead Source API Keys</h3>
+        <p className="hint" style={{marginTop:0,marginBottom:12}}>Add to find <strong>real verified contacts</strong>.</p>
         <div className="field">
-          <label>🎯 Hunter.io API Key <a href="https://hunter.io/api-keys" target="_blank" rel="noreferrer" className="get-key-link">Get free key →</a></label>
+          <label>🎯 Hunter.io API Key <a href="https://hunter.io/api-keys" target="_blank" rel="noreferrer" className="get-key-link">Get free →</a></label>
           <input type="password" placeholder="hunter_xxxxxxxxxxxx" value={apiKeys.hunter} onChange={e=>setApiKeys(k=>({...k,hunter:e.target.value}))}/>
-          <span className="field-hint">50 free searches/month • Finds real emails by domain or company name</span>
+          <span className="field-hint">50 free/month • Real emails by domain or company</span>
         </div>
         <div className="field">
-          <label>🚀 Apollo.io API Key <a href="https://developer.apollo.io" target="_blank" rel="noreferrer" className="get-key-link">Get free key →</a></label>
+          <label>🚀 Apollo.io API Key <a href="https://developer.apollo.io" target="_blank" rel="noreferrer" className="get-key-link">Get free →</a></label>
           <input type="password" placeholder="apollo_xxxxxxxxxxxx" value={apiKeys.apollo} onChange={e=>setApiKeys(k=>({...k,apollo:e.target.value}))}/>
-          <span className="field-hint">Free plan: 50 contacts/month • 275M+ real contacts database</span>
+          <span className="field-hint">Free: 50 contacts/month • 275M+ database</span>
         </div>
         <div className="field">
           <label>📍 Google Places API Key <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer" className="get-key-link">Get key →</a></label>
           <input type="password" placeholder="AIzaSy…" value={apiKeys.places} onChange={e=>setApiKeys(k=>({...k,places:e.target.value}))}/>
-          <span className="field-hint">Find local businesses: restaurants, gyms, clinics with contact info</span>
+          <span className="field-hint">Find local businesses with phone + address</span>
         </div>
         <div className="api-keys-status">
           {["hunter","apollo","places"].map(k=>(
-            <div key={k} className={`api-key-badge ${apiKeys[k]?"active":""}`}>
-              {apiKeys[k]?"✅":"⬜"} {k.charAt(0).toUpperCase()+k.slice(1)}
-            </div>
+            <div key={k} className={`api-key-badge ${apiKeys[k]?"active":""}`}>{apiKeys[k]?"✅":"⬜"} {k.charAt(0).toUpperCase()+k.slice(1)}</div>
           ))}
         </div>
       </div>
     </div>
-
+    {/* Gmail OAuth */}
+    <div className="card gmail-setup-card">
+      <h3>📧 Gmail Integration — Send Emails Directly</h3>
+      <p className="hint" style={{marginTop:0,marginBottom:14}}>Connect your Gmail to send outreach emails with one click — with your approval before every send.</p>
+      <div className="field">
+        <label>🔑 Google OAuth Client ID <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" className="get-key-link">Create credential →</a></label>
+        <input type="text" placeholder="123456789-abc.apps.googleusercontent.com" value={config.googleClientId||""} onChange={e=>setConfig(c=>({...c,googleClientId:e.target.value}))}/>
+        <span className="field-hint">Create OAuth 2.0 Client ID → Web Application → Authorized origins: your domain</span>
+      </div>
+      <div className="gmail-setup-steps">
+        <div className="step"><span className="step-num">1</span><span>Go to Google Cloud Console → APIs & Services → Credentials</span></div>
+        <div className="step"><span className="step-num">2</span><span>Create Credentials → OAuth 2.0 Client ID → Web Application</span></div>
+        <div className="step"><span className="step-num">3</span><span>Add your site URL to "Authorized JavaScript origins"</span></div>
+        <div className="step"><span className="step-num">4</span><span>Enable Gmail API in APIs & Services → Library</span></div>
+        <div className="step"><span className="step-num">5</span><span>Paste Client ID above → go to 📧 Send Emails tab → Connect</span></div>
+      </div>
+    </div>
     {/* Google Sheets */}
     <div className="card sheets-card">
       <div className="sheets-header">
@@ -288,128 +288,343 @@ function SetupTab({config,setConfig,sheetsConfig,setSheetsConfig,apiKeys,setApiK
         </label>
       </div>
       {sheetsConfig.enabled&&<div className="sheets-fields">
-        <div className="field"><label>🔑 Sheets API Key</label>
-          <input type="password" placeholder="AIzaSy…" value={sheetsConfig.apiKey} onChange={e=>setSheetsConfig(c=>({...c,apiKey:e.target.value}))}/>
-        </div>
-        <div className="field"><label>📋 Spreadsheet ID</label>
-          <input type="text" placeholder="1BxiMVs0XRA…" value={sheetsConfig.sheetId} onChange={e=>setSheetsConfig(c=>({...c,sheetId:e.target.value}))}/>
-        </div>
+        <div className="field"><label>🔑 Sheets API Key</label><input type="password" placeholder="AIzaSy…" value={sheetsConfig.apiKey} onChange={e=>setSheetsConfig(c=>({...c,apiKey:e.target.value}))}/></div>
+        <div className="field"><label>📋 Spreadsheet ID</label><input type="text" placeholder="1BxiMVs0X…" value={sheetsConfig.sheetId} onChange={e=>setSheetsConfig(c=>({...c,sheetId:e.target.value}))}/></div>
       </div>}
     </div>
   </div>);
 }
 
+// ── EMAIL SENDER TAB ──────────────────────────────────────────────────────────
+function EmailSenderTab({config,apiKey,stages,sheetsConfig,gmailState,setGmailState}){
+  const {token,profile,connected} = gmailState;
+  const [connecting,setConnecting]=useState(false);
+  const [connectError,setConnectError]=useState("");
+  const [leads,setLeads]=useState(()=>Array.isArray(stages.leads?.result)?stages.leads.result:[]);
+  const [selectedLead,setSelectedLead]=useState(null);
+  const [generating,setGenerating]=useState(false);
+  const [emailType,setEmailType]=useState("cold");
+  const [draft,setDraft]=useState(null);
+  const [showApproval,setShowApproval]=useState(false);
+  const [sending,setSending]=useState(false);
+  const [sentLog,setSentLog]=useState(()=>{try{return JSON.parse(localStorage.getItem("cf_sent")||"[]");}catch{return [];}});
+  const [sendSuccess,setSendSuccess]=useState(null);
+  const [bulkMode,setBulkMode]=useState(false);
+  const [bulkQueue,setBulkQueue]=useState([]);
+  const [bulkIdx,setBulkIdx]=useState(0);
+
+  // Sync leads from stages
+  useEffect(()=>{
+    if(Array.isArray(stages.leads?.result)&&stages.leads.result.length>0) setLeads(stages.leads.result);
+  },[stages.leads]);
+
+  useEffect(()=>{localStorage.setItem("cf_sent",JSON.stringify(sentLog));},[sentLog]);
+
+  async function connectGmail(){
+    if(!config.googleClientId){setConnectError("Add your Google OAuth Client ID in ⚙️ Setup first.");return;}
+    setConnecting(true);setConnectError("");
+    try{
+      const t=await initGmailAuth(config.googleClientId);
+      const p=await getGmailProfile(t);
+      setGmailState({token:t,profile:p,connected:true});
+    }catch(e){setConnectError(e.message);}
+    setConnecting(false);
+  }
+
+  function disconnectGmail(){
+    clearGmailToken();setGmailState({token:null,profile:null,connected:false});
+  }
+
+  async function generateDraft(lead,type){
+    if(!apiKey){alert("Anthropic API key required.");return;}
+    setGenerating(true);setDraft(null);setSendSuccess(null);
+    try{
+      let prompt="";
+      const baseInfo=`Sender: ${config.yourName||"us"} from ${config.companyName||config.service}. Price: ${config.price}.`;
+      if(type==="cold")
+        prompt=`Write a cold outreach email to ${lead.contact} at ${lead.name}. Service: ${config.service}. Pain: ${lead.pain_point||"scaling online presence"}. ${baseInfo} Max 130 words. Include subject line on first line as "Subject: ...".`;
+      else if(type==="followup")
+        prompt=`Write a follow-up email to ${lead.contact} at ${lead.name} who hasn't replied yet. Reference our ${config.service} offer. Add a new value point. ${baseInfo} Max 100 words. Include subject line as "Subject: Re: ...".`;
+      else if(type==="proposal")
+        prompt=`Write a brief proposal email to ${lead.contact} at ${lead.name} attaching a proposal for ${config.service}. Pain: ${lead.pain_point}. Investment: ${config.price}. ${baseInfo} Max 150 words. Include subject line as "Subject: Proposal for ...".`;
+      else if(type==="meeting")
+        prompt=`Write a meeting request email to ${lead.contact} at ${lead.name} for a 30-min discovery call about ${config.service}. ${config.calendlyLink?`Booking: ${config.calendlyLink}`:"Ask for availability."} ${baseInfo} Max 100 words. Include subject line as "Subject: Quick 30-min chat ...".`;
+
+      const raw=await callClaude(apiKey,"You are an expert cold email copywriter. Write concise, human, high-converting emails.",prompt);
+      const parsed=parseEmailText(raw);
+      setDraft({...parsed,to:lead.email,lead});
+    }catch(e){alert("Error: "+e.message);}
+    setGenerating(false);
+  }
+
+  async function confirmSend({to,subject,body}){
+    if(!token){alert("Connect Gmail first.");return;}
+    setSending(true);
+    try{
+      const from=`${config.yourName||config.companyName||""} <${profile?.emailAddress||""}>`;
+      await gmailSend(token,{from,to,subject,body});
+      const entry={to,subject,leadName:draft?.lead?.name||"",sentAt:new Date().toISOString(),type:emailType};
+      setSentLog(l=>[entry,...l]);
+      if(sheetsConfig.enabled&&sheetsConfig.apiKey&&sheetsConfig.sheetId){
+        try{await logSentEmail(sheetsConfig,{to,subject,lead:draft?.lead,cfg:config});}catch(e){console.warn(e);}
+      }
+      setSendSuccess({to,subject});
+      setShowApproval(false);setDraft(null);
+    }catch(e){alert("Send failed: "+e.message);}
+    setSending(false);
+  }
+
+  // Bulk: generate + queue all leads
+  async function startBulkSend(){
+    if(!apiKey){alert("API key required.");return;}
+    if(!connected){alert("Connect Gmail first.");return;}
+    if(leads.filter(l=>l.email).length===0){alert("No leads with email addresses.");return;}
+    setBulkMode(true);setBulkIdx(0);
+    const queue=leads.filter(l=>l.email);
+    setBulkQueue(queue);
+    // Generate first draft
+    await generateDraft(queue[0],emailType);
+  }
+
+  async function bulkNext(){
+    const next=bulkIdx+1;
+    if(next>=bulkQueue.length){setBulkMode(false);alert("✅ Bulk send complete!");return;}
+    setBulkIdx(next);
+    await generateDraft(bulkQueue[next],emailType);
+  }
+
+  const hasEmail=leads.filter(l=>l.email).length;
+
+  return(<div className="email-sender-wrap">
+    {showApproval&&draft&&(
+      <SendApprovalModal draft={draft} onConfirm={confirmSend} onCancel={()=>setShowApproval(false)} sending={sending} gmailProfile={profile}/>
+    )}
+
+    <div className="email-sender-header">
+      <h2>📧 Send Emails</h2>
+      <p className="sub">Generate → Review → Send with one click from your Gmail</p>
+    </div>
+
+    {/* Gmail Connection */}
+    <div className={`gmail-connect-card card ${connected?"connected":""}`}>
+      {connected?(
+        <div className="gmail-connected">
+          <div className="gmail-profile">
+            <div className="gmail-avatar">📧</div>
+            <div><div className="gmail-email">{profile?.emailAddress}</div><div className="gmail-status">✅ Gmail Connected</div></div>
+          </div>
+          <button className="btn-ghost" onClick={disconnectGmail}>Disconnect</button>
+        </div>
+      ):(
+        <div className="gmail-disconnected">
+          <div className="gmail-icon-big">📧</div>
+          <div>
+            <h3>Connect Your Gmail</h3>
+            <p>Authorize once — then send outreach emails directly from your account with your approval before every send.</p>
+            {connectError&&<div className="error-banner" style={{marginTop:8}}>❌ {connectError}</div>}
+            {!config.googleClientId&&<div className="needs-key-banner" style={{marginTop:8}}>⚠️ Add Google OAuth Client ID in ⚙️ Setup first.</div>}
+          </div>
+          <button className="btn-primary btn-gmail-connect" onClick={connectGmail} disabled={connecting||!config.googleClientId}>
+            {connecting?"⏳ Connecting…":"🔐 Connect Gmail"}
+          </button>
+        </div>
+      )}
+    </div>
+
+    {connected&&(<>
+      {/* Workflow */}
+      <div className="send-workflow card">
+        <h3>⚡ How it works</h3>
+        <div className="send-steps">
+          <div className="send-step"><span>1️⃣</span><span>Select lead</span></div>
+          <div className="send-arrow">→</div>
+          <div className="send-step"><span>2️⃣</span><span>Choose email type</span></div>
+          <div className="send-arrow">→</div>
+          <div className="send-step"><span>3️⃣</span><span>AI drafts email</span></div>
+          <div className="send-arrow">→</div>
+          <div className="send-step"><span>4️⃣</span><span>You review & edit</span></div>
+          <div className="send-arrow">→</div>
+          <div className="send-step"><span>5️⃣</span><span>Click Send ✅</span></div>
+        </div>
+      </div>
+
+      {/* Email type selector */}
+      <div className="card">
+        <h3>📨 Email Type</h3>
+        <div className="email-type-grid">
+          {[["cold","❄️","Cold Outreach","First contact — introduces you and the problem"],
+            ["followup","🔁","Follow Up","For leads who haven't replied in 3–5 days"],
+            ["proposal","📄","Proposal Email","Sending your proposal / pricing"],
+            ["meeting","📅","Meeting Request","Asking for a 30-min discovery call"]].map(([k,icon,label,desc])=>(
+            <button key={k} className={`email-type-card ${emailType===k?"active":""}`} onClick={()=>setEmailType(k)}>
+              <span className="et-icon">{icon}</span>
+              <div><div className="et-label">{label}</div><div className="et-desc">{desc}</div></div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Lead selector + generator */}
+      <div className="send-panel">
+        {/* Lead List */}
+        <div className="card send-leads-list">
+          <h3>👥 Leads ({hasEmail} with email)</h3>
+          {leads.length===0&&<div className="empty-mini">Import leads first in 📥 Real Leads tab.</div>}
+          {leads.map((lead,i)=>(
+            <div key={i} className={`send-lead-row ${selectedLead===i?"active":""} ${!lead.email?"no-email":""}`}
+              onClick={()=>lead.email&&setSelectedLead(i)}>
+              <div>
+                <div className="send-lead-name">{lead.name}</div>
+                <div className="send-lead-email">{lead.email||"❌ No email"}</div>
+              </div>
+              {lead.verified&&<span className="badge-verified">✅</span>}
+            </div>
+          ))}
+        </div>
+
+        {/* Draft area */}
+        <div className="card send-draft-area">
+          {selectedLead===null?(
+            <div className="empty-mini" style={{padding:40,textAlign:"center"}}>
+              <div style={{fontSize:40,marginBottom:12}}>👈</div>
+              <p>Select a lead to generate an email</p>
+            </div>
+          ):(()=>{
+            const lead=leads[selectedLead];
+            return(<div>
+              <div className="draft-lead-info">
+                <strong>{lead.name}</strong>
+                <span>{lead.contact}</span>
+                <a href={`mailto:${lead.email}`}>{lead.email}</a>
+                {lead.pain_point&&<span className="draft-pain">💡 {lead.pain_point}</span>}
+              </div>
+              <div className="draft-actions">
+                <button className="btn-primary" onClick={()=>generateDraft(lead,emailType)} disabled={generating}>
+                  {generating?"⏳ Drafting…":"🤖 Generate Draft"}
+                </button>
+                {bulkMode?(
+                  <div className="bulk-progress">
+                    <span>Bulk send: {bulkIdx+1}/{bulkQueue.length}</span>
+                    <button className="btn-ghost" onClick={()=>setBulkMode(false)}>Stop bulk</button>
+                  </div>
+                ):(
+                  hasEmail>1&&<button className="btn-secondary" onClick={startBulkSend} disabled={generating}>📨 Bulk Send All ({hasEmail})</button>
+                )}
+              </div>
+
+              {sendSuccess&&<div className="send-success">✅ Sent to {sendSuccess.to} — "{sendSuccess.subject}"</div>}
+
+              {draft&&draft.lead===lead&&(
+                <div className="draft-preview">
+                  <div className="draft-preview-header">
+                    <h4>📝 Draft Preview</h4>
+                    <span className="draft-hint">Review below — you can edit before sending</span>
+                  </div>
+                  <div className="draft-field"><label>To</label><div className="draft-val">{draft.to}</div></div>
+                  <div className="draft-field"><label>Subject</label><div className="draft-val">{draft.subject}</div></div>
+                  <div className="draft-field"><label>Body</label><div className="draft-body">{draft.body}</div></div>
+                  <div className="draft-send-actions">
+                    <button className="btn-ghost copy-btn" onClick={()=>navigator.clipboard.writeText(`Subject: ${draft.subject}\n\n${draft.body}`)}>📋 Copy</button>
+                    <button className="btn-send" onClick={()=>setShowApproval(true)}>📤 Review & Send</button>
+                    {bulkMode&&<button className="btn-secondary" onClick={bulkNext}>Skip → Next Lead</button>}
+                  </div>
+                </div>
+              )}
+            </div>);
+          })()}
+        </div>
+      </div>
+
+      {/* Sent Log */}
+      {sentLog.length>0&&(
+        <div className="card">
+          <h3>📬 Sent Emails ({sentLog.length})</h3>
+          <div className="sent-log">
+            {sentLog.slice(0,20).map((s,i)=>(
+              <div key={i} className="sent-row">
+                <div className="sent-row-main">
+                  <span className="sent-to">{s.to}</span>
+                  <span className="sent-subject">{s.subject}</span>
+                </div>
+                <div className="sent-row-meta">
+                  <span className="sent-type">{s.type}</span>
+                  <span className="sent-time">{new Date(s.sentAt).toLocaleDateString()}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>)}
+  </div>);
+}
+
 // ── REAL LEAD FINDER TAB ──────────────────────────────────────────────────────
 function RealLeadFinderTab({config,apiKey,apiKeys,sheetsConfig,onLeadsFound}){
-  const [source,setSource]=useState("csv");
-  const [loading,setLoading]=useState(false);
-  const [results,setResults]=useState([]);
-  const [error,setError]=useState("");
-  const [enriching,setEnriching]=useState(false);
-  const [enriched,setEnriched]=useState({});
-
-  // CSV state
+  const [source,setSource]=useState("csv");const [loading,setLoading]=useState(false);
+  const [results,setResults]=useState([]);const [error,setError]=useState("");
+  const [enriching,setEnriching]=useState(false);const [enriched,setEnriched]=useState({});
   const [csvText,setCsvText]=useState("");
-
-  // Hunter state
-  const [hunterMode,setHunterMode]=useState("domain");
-  const [hunterInput,setHunterInput]=useState("");
-
-  // Apollo state
-  const [apolloTitle,setApolloTitle]=useState("owner,founder,ceo,director");
-  const [apolloPage,setApolloPage]=useState(1);
-
-  // Places state
-  const [placesLocation,setPlacesLocation]=useState("");
-  const [placesKeyword,setPlacesKeyword]=useState("");
+  const [hunterMode,setHunterMode]=useState("domain");const [hunterInput,setHunterInput]=useState("");
+  const [apolloTitle,setApolloTitle]=useState("owner,founder,ceo,director");const [apolloPage,setApolloPage]=useState(1);
+  const [placesLocation,setPlacesLocation]=useState("");const [placesKeyword,setPlacesKeyword]=useState("");
 
   async function find(){
     setLoading(true);setError("");setResults([]);setEnriched({});
     try{
       let leads=[];
-      if(source==="csv"){
-        leads=parseCSVLeads(csvText);
-        if(leads.length===0) throw new Error("No leads found. Check your CSV format — need at least Name, Email columns.");
-      }
+      if(source==="csv"){leads=parseCSVLeads(csvText);if(leads.length===0)throw new Error("No leads found. Check your CSV format.");}
       else if(source==="hunter"){
-        if(!apiKeys.hunter) throw new Error("Hunter.io API key required. Add it in ⚙️ Setup.");
-        if(!hunterInput.trim()) throw new Error("Enter a domain (e.g. shopify.com) or company name.");
-        if(hunterMode==="domain") leads=await hunterDomainSearch(apiKeys.hunter,hunterInput.trim());
-        else leads=await hunterCompanySearch(apiKeys.hunter,hunterInput.trim());
-        if(leads.length===0) throw new Error("No emails found for this domain/company. Try a different one.");
+        if(!apiKeys.hunter)throw new Error("Hunter.io API key required — add in ⚙️ Setup.");
+        if(!hunterInput.trim())throw new Error("Enter a domain or company name.");
+        leads=hunterMode==="domain"?await hunterDomainSearch(apiKeys.hunter,hunterInput.trim()):await hunterCompanySearch(apiKeys.hunter,hunterInput.trim());
+        if(leads.length===0)throw new Error("No emails found. Try a different domain.");
       }
       else if(source==="apollo"){
-        if(!apiKeys.apollo) throw new Error("Apollo.io API key required. Add it in ⚙️ Setup.");
+        if(!apiKeys.apollo)throw new Error("Apollo.io API key required — add in ⚙️ Setup.");
         leads=await apolloSearch(apiKeys.apollo,{niche:config.niche,country:config.country,title:apolloTitle,page:apolloPage});
-        if(leads.length===0) throw new Error("No results. Try broader niche or different country.");
+        if(leads.length===0)throw new Error("No results. Try broader niche or different country.");
       }
       else if(source==="places"){
-        if(!apiKeys.places) throw new Error("Google Places API key required. Add it in ⚙️ Setup.");
-        const loc=placesLocation||config.country;
-        const kw=placesKeyword||config.niche;
-        leads=await googlePlacesSearch(apiKeys.places,{keyword:kw,location:loc});
-        if(leads.length===0) throw new Error("No places found. Try a more specific location (e.g. 'New York City').");
+        if(!apiKeys.places)throw new Error("Google Places API key required — add in ⚙️ Setup.");
+        leads=await googlePlacesSearch(apiKeys.places,{keyword:placesKeyword||config.niche,location:placesLocation||config.country});
+        if(leads.length===0)throw new Error("No places found. Try a specific city.");
       }
       else if(source==="ai"){
-        if(!apiKey) throw new Error("Anthropic API key required for AI demo leads.");
-        const raw=await callClaude(apiKey,
-          "You are a B2B lead research expert. Return ONLY valid JSON, no markdown.",
-          `Generate 6 realistic ${config.niche} leads in ${config.country} needing ${config.service}.
-Return JSON: [{"name":"Business Name","contact":"Owner Name","email":"email@domain.com","website":"https://...","pain_point":"specific problem","size":"small/medium","platform":"AI Demo","verified":false}]
-IMPORTANT: Use realistic domains that match the business name. Do NOT use example.com.`
-        );
+        if(!apiKey)throw new Error("Anthropic API key required.");
+        const raw=await callClaude(apiKey,"You are a B2B lead expert. Return ONLY valid JSON.",
+          `Generate 6 sample ${config.niche} leads in ${config.country} needing ${config.service}.
+JSON: [{"name":"Biz","contact":"Name","email":"name@bizname.com","website":"https://bizname.com","pain_point":"specific problem","size":"small","platform":"AI Demo","verified":false}]
+Use realistic domains matching the business name. Not example.com.`);
         leads=parseJSON(raw)||[];
       }
       setResults(leads);
-    }catch(e){ setError(e.message); }
+    }catch(e){setError(e.message);}
     setLoading(false);
   }
 
   async function enrichLead(lead,idx){
-    if(!apiKey){ alert("Anthropic API key required for AI enrichment."); return; }
+    if(!apiKey){alert("API key required.");return;}
     setEnriching(true);
     try{
-      const text=await callClaude(apiKey,
-        "You are a B2B sales researcher. Analyze a business and identify their pain points. Return ONLY valid JSON.",
-        `Research this business and identify their top digital marketing/web pain point:
-Business: ${lead.name}
-Website: ${lead.website||"unknown"}
-Industry: ${config.niche}
-Country: ${config.country}
-Contact title: ${lead.title||"unknown"}
-
-Return JSON: {"pain_point":"specific pain point","best_service":"which of our services fits best","opening_line":"1 sentence ice-breaker for cold outreach","score":1-10 (how likely to need our service)}`
-      );
+      const text=await callClaude(apiKey,"You are a B2B sales researcher. Return ONLY valid JSON.",
+        `Research and identify pain points for:
+Business: ${lead.name}, Website: ${lead.website||"unknown"}, Industry: ${config.niche}, Country: ${config.country}
+Return JSON: {"pain_point":"specific pain","best_service":"which service fits","opening_line":"1 sentence ice-breaker","score":1-10}`);
       const data=parseJSON(text)||{};
       setEnriched(e=>({...e,[idx]:{...data,enriched:true}}));
       setResults(r=>r.map((l,i)=>i===idx?{...l,pain_point:data.pain_point||l.pain_point,opening_line:data.opening_line||"",score:data.score}:l));
-    }catch(e){ console.warn("Enrich failed:",e.message); }
+    }catch(e){console.warn("Enrich failed:",e.message);}
     setEnriching(false);
   }
 
-  async function enrichAll(){
-    if(!apiKey){ alert("Anthropic API key required."); return; }
-    for(let i=0;i<results.length;i++){
-      if(!enriched[i]) await enrichLead(results[i],i);
-    }
-  }
-
-  function useLeads(){
-    if(results.length===0) return;
-    onLeadsFound(results);
-  }
-
+  const realLeads=results.filter(l=>l.email);const verifiedLeads=results.filter(l=>l.verified);
   const src=REAL_LEAD_SOURCES.find(s=>s.key===source);
-  const realLeads=results.filter(l=>l.email&&l.email!=="");
-  const verifiedLeads=results.filter(l=>l.verified);
 
   return(<div className="real-lead-wrap">
-    <div className="real-lead-header">
-      <h2>📥 Real Lead Finder</h2>
-      <p className="sub">Find <strong>real verified contacts</strong> — not fake AI data. Import from Hunter.io, Apollo.io, Google Places, or paste your own CSV.</p>
+    <div className="real-lead-header"><h2>📥 Real Lead Finder</h2>
+      <p className="sub">Find <strong>real verified contacts</strong> — import from Hunter.io, Apollo.io, Google Places, or paste CSV.</p>
     </div>
-
-    {/* Source Selector */}
     <div className="source-tabs">
       {REAL_LEAD_SOURCES.map(s=>(
         <button key={s.key} className={`source-tab ${source===s.key?"active":""}`} onClick={()=>{setSource(s.key);setResults([]);setError("");}}>
@@ -420,139 +635,79 @@ Return JSON: {"pain_point":"specific pain point","best_service":"which of our se
         </button>
       ))}
     </div>
-
-    {/* Source-specific inputs */}
     <div className="source-form card">
       {source==="csv"&&<div>
         <h3>📋 Paste CSV / Tab-Separated Data</h3>
-        <p className="hint" style={{marginBottom:12}}>Paste from LinkedIn Sales Navigator export, Apollo export, or any spreadsheet. Headers auto-detected.<br/>
-          <strong>Supported columns:</strong> Company, Contact, Email, Website, Phone, LinkedIn, Title, Size, Notes</p>
-        <div className="csv-example">
-          <div className="csv-example-title">📌 Example format:</div>
-          <code>Company,Contact,Email,Website,Title{"\n"}Acme Corp,John Smith,john@acme.com,https://acme.com,CEO{"\n"}Tech Ltd,Jane Doe,jane@tech.com,https://tech.com,Founder</code>
-        </div>
-        <textarea className="csv-textarea" placeholder={"Paste your CSV or tab-separated data here…\n\nCompany,Contact,Email,Website\nAcme Corp,John Smith,john@acme.com,https://acme.com"} value={csvText} onChange={e=>setCsvText(e.target.value)} rows={8}/>
-        <div className="form-actions">
-          <button className="btn-primary" onClick={find} disabled={loading||!csvText.trim()}>{loading?"⏳ Parsing…":"📋 Import Leads"}</button>
-          <span className="hint">Tip: Export from LinkedIn Sales Navigator → Download → paste here</span>
-        </div>
+        <p className="hint" style={{marginBottom:12}}>Paste from LinkedIn Sales Nav, Apollo export, or any spreadsheet. Headers auto-detected.<br/><strong>Columns:</strong> Company, Contact, Email, Website, Phone, LinkedIn, Title, Size, Notes</p>
+        <div className="csv-example"><div className="csv-example-title">📌 Example:</div>
+          <code>Company,Contact,Email,Website,Title{"\n"}Acme Corp,John Smith,john@acme.com,https://acme.com,CEO</code></div>
+        <textarea className="csv-textarea" placeholder={"Paste your CSV here…"} value={csvText} onChange={e=>setCsvText(e.target.value)} rows={8}/>
+        <div className="form-actions"><button className="btn-primary" onClick={find} disabled={loading||!csvText.trim()}>{loading?"⏳ Parsing…":"📋 Import Leads"}</button></div>
       </div>}
-
       {source==="hunter"&&<div>
         <h3>🎯 Hunter.io — Find Real Emails</h3>
-        {!apiKeys.hunter&&<div className="needs-key-banner">⚠️ Add your Hunter.io API key in <strong>⚙️ Setup</strong> first. <a href="https://hunter.io/api-keys" target="_blank" rel="noreferrer">Get free key →</a></div>}
+        {!apiKeys.hunter&&<div className="needs-key-banner">⚠️ Add Hunter.io API key in ⚙️ Setup. <a href="https://hunter.io/api-keys" target="_blank" rel="noreferrer">Get free →</a></div>}
         <div className="mode-toggle">
           <button className={`mode-btn ${hunterMode==="domain"?"active":""}`} onClick={()=>setHunterMode("domain")}>🌐 By Domain</button>
-          <button className={`mode-btn ${hunterMode==="company"?"active":""}`} onClick={()=>setHunterMode("company")}>🏢 By Company Name</button>
+          <button className={`mode-btn ${hunterMode==="company"?"active":""}`} onClick={()=>setHunterMode("company")}>🏢 By Company</button>
         </div>
-        <div className="field">
-          <label>{hunterMode==="domain"?"Company Website Domain":"Company Name"}</label>
+        <div className="field"><label>{hunterMode==="domain"?"Domain":"Company Name"}</label>
           <input type="text" placeholder={hunterMode==="domain"?"shopify.com":"Shopify Inc"} value={hunterInput} onChange={e=>setHunterInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&find()}/>
-          <span className="field-hint">{hunterMode==="domain"?"Enter domain without https:// (e.g. nike.com)":"Enter the exact company name"}</span>
+          <span className="field-hint">{hunterMode==="domain"?"No https:// needed":"Exact company name"}</span>
         </div>
-        <div className="form-actions">
-          <button className="btn-primary" onClick={find} disabled={loading||!apiKeys.hunter||!hunterInput.trim()}>{loading?"⏳ Searching…":"🎯 Find Emails"}</button>
-        </div>
-        <div className="hunter-tips">
-          <div className="tip-item">✦ Best for: when you already know the company, just need the email</div>
-          <div className="tip-item">✦ Find company domains from LinkedIn → Company Page → Website</div>
-          <div className="tip-item">✦ 50 free searches/month on free plan</div>
-        </div>
+        <div className="form-actions"><button className="btn-primary" onClick={find} disabled={loading||!apiKeys.hunter||!hunterInput.trim()}>{loading?"⏳ Searching…":"🎯 Find Emails"}</button></div>
+        <div className="hunter-tips"><div className="tip-item">✦ 50 free searches/month</div><div className="tip-item">✦ Find domain from LinkedIn → Company Page → Website</div></div>
       </div>}
-
       {source==="apollo"&&<div>
-        <h3>🚀 Apollo.io — Search 275M+ Real Contacts</h3>
-        {!apiKeys.apollo&&<div className="needs-key-banner">⚠️ Add your Apollo.io API key in <strong>⚙️ Setup</strong> first. <a href="https://developer.apollo.io" target="_blank" rel="noreferrer">Get free key →</a></div>}
+        <h3>🚀 Apollo.io — 275M+ Real Contacts</h3>
+        {!apiKeys.apollo&&<div className="needs-key-banner">⚠️ Add Apollo.io API key in ⚙️ Setup. <a href="https://developer.apollo.io" target="_blank" rel="noreferrer">Get free →</a></div>}
         <div className="apollo-fields">
-          <div className="field">
-            <label>🏢 Industry / Keywords</label>
-            <input type="text" value={config.niche} readOnly style={{opacity:.7}} title="Set in Setup tab"/>
-            <span className="field-hint">From your Setup config</span>
-          </div>
-          <div className="field">
-            <label>👤 Job Titles (comma-separated)</label>
-            <input type="text" value={apolloTitle} onChange={e=>setApolloTitle(e.target.value)} placeholder="owner,founder,ceo,director,manager"/>
-          </div>
-          <div className="field">
-            <label>🌍 Country</label>
-            <input type="text" value={config.country} readOnly style={{opacity:.7}}/>
-          </div>
-          <div className="field">
-            <label>📄 Page</label>
-            <input type="number" min="1" max="10" value={apolloPage} onChange={e=>setApolloPage(+e.target.value)}/>
-            <span className="field-hint">10 results per page — increase to get more</span>
-          </div>
+          <div className="field"><label>🏢 Industry</label><input value={config.niche} readOnly style={{opacity:.7}}/><span className="field-hint">From Setup</span></div>
+          <div className="field"><label>👤 Titles</label><input value={apolloTitle} onChange={e=>setApolloTitle(e.target.value)} placeholder="owner,founder,ceo,director"/></div>
+          <div className="field"><label>🌍 Country</label><input value={config.country} readOnly style={{opacity:.7}}/></div>
+          <div className="field"><label>📄 Page</label><input type="number" min="1" max="10" value={apolloPage} onChange={e=>setApolloPage(+e.target.value)}/><span className="field-hint">10 results per page</span></div>
         </div>
         <div className="form-actions">
           <button className="btn-primary" onClick={find} disabled={loading||!apiKeys.apollo}>{loading?"⏳ Searching…":"🚀 Search Apollo"}</button>
-          <button className="btn-secondary" onClick={()=>{setApolloPage(p=>p+1);setTimeout(find,100);}} disabled={loading||!apiKeys.apollo||results.length===0}>Next Page →</button>
         </div>
-        <div className="hunter-tips">
-          <div className="tip-item">✦ Free plan: 50 contacts/month, 10 email exports/month</div>
-          <div className="tip-item">✦ Emails shown as "email@apollo.io" on free — upgrade for real emails</div>
-          <div className="tip-item">✦ Still gives you name, company, LinkedIn, title for manual outreach</div>
-        </div>
+        <div className="hunter-tips"><div className="tip-item">✦ Free: 50 contacts/month, 10 email exports</div><div className="tip-item">✦ Upgrade for more real emails</div></div>
       </div>}
-
       {source==="places"&&<div>
-        <h3>📍 Google Places — Find Local Businesses</h3>
-        {!apiKeys.places&&<div className="needs-key-banner">⚠️ Add your Google Places API key in <strong>⚙️ Setup</strong> first. <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer">Get key →</a></div>}
+        <h3>📍 Google Places — Local Businesses</h3>
+        {!apiKeys.places&&<div className="needs-key-banner">⚠️ Add Google Places API key in ⚙️ Setup. <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer">Get key →</a></div>}
         <div className="apollo-fields">
-          <div className="field">
-            <label>🔍 Business Type / Keyword</label>
-            <input type="text" value={placesKeyword||config.niche} onChange={e=>setPlacesKeyword(e.target.value)} placeholder="gym, restaurant, dental clinic…"/>
-          </div>
-          <div className="field">
-            <label>📍 City / Location</label>
-            <input type="text" value={placesLocation} onChange={e=>setPlacesLocation(e.target.value)} placeholder="New York City, London, Sydney…"/>
-          </div>
+          <div className="field"><label>🔍 Business Type</label><input value={placesKeyword||config.niche} onChange={e=>setPlacesKeyword(e.target.value)} placeholder="gym, restaurant, dental…"/></div>
+          <div className="field"><label>📍 City</label><input value={placesLocation} onChange={e=>setPlacesLocation(e.target.value)} placeholder="New York City, London…"/></div>
         </div>
-        <div className="form-actions">
-          <button className="btn-primary" onClick={find} disabled={loading||!apiKeys.places||!placesLocation}>{loading?"⏳ Searching…":"📍 Find Local Businesses"}</button>
-        </div>
-        <div className="places-note">
-          <strong>📌 Note:</strong> Google Places gives name, address, phone, rating. Email not included — use Hunter.io to find emails for these businesses after importing.
-        </div>
+        <div className="form-actions"><button className="btn-primary" onClick={find} disabled={loading||!apiKeys.places||!placesLocation}>{loading?"⏳ Searching…":"📍 Find Local Businesses"}</button></div>
+        <div className="places-note"><strong>Note:</strong> Places gives phone + address. Use Hunter.io to find emails after importing.</div>
       </div>}
-
       {source==="ai"&&<div>
         <h3>🤖 AI Demo Leads</h3>
-        <div className="ai-demo-warning">
-          ⚠️ <strong>These are NOT real people.</strong> Use only as a reference for what your target market looks like. For real outreach, use Hunter.io, Apollo, Places, or CSV import.
-        </div>
-        <p className="hint">Generates sample lead profiles for: <strong>{config.niche}</strong> in <strong>{config.country}</strong></p>
-        <div className="form-actions">
-          <button className="btn-primary" onClick={find} disabled={loading||!apiKey}>{loading?"⏳ Generating…":"🤖 Generate Demo Leads"}</button>
-        </div>
+        <div className="ai-demo-warning">⚠️ <strong>NOT real people.</strong> For outreach, use Hunter.io, Apollo, Places, or CSV.</div>
+        <p className="hint">Sample leads for: <strong>{config.niche}</strong> in <strong>{config.country}</strong></p>
+        <div className="form-actions"><button className="btn-primary" onClick={find} disabled={loading||!apiKey}>{loading?"⏳ Generating…":"🤖 Generate Demo"}</button></div>
       </div>}
     </div>
-
-    {/* Error */}
     {error&&<div className="error-banner">❌ {error}</div>}
-
-    {/* Results */}
     {results.length>0&&<div className="results-section">
       <div className="results-header">
         <div className="results-stats">
-          <span className="stat-pill">{results.length} leads found</span>
+          <span className="stat-pill">{results.length} leads</span>
           {realLeads.length>0&&<span className="stat-pill green">{realLeads.length} with email</span>}
           {verifiedLeads.length>0&&<span className="stat-pill blue">{verifiedLeads.length} verified ✅</span>}
         </div>
         <div className="results-actions">
-          {apiKey&&<button className="btn-secondary" onClick={enrichAll} disabled={enriching}>{enriching?"⏳ Enriching…":"🤖 AI Enrich All (Pain Points)"}</button>}
-          <button className="btn-success" onClick={useLeads}>🚀 Use in Workflow ({results.length})</button>
-          {sheetsConfig.enabled&&<button className="btn-secondary" onClick={async()=>{try{await exportLeads(sheetsConfig,results,config);alert("✅ Leads exported to Google Sheets!");}catch(e){alert("❌ "+e.message);}}}>📊 Save to Sheets</button>}
+          {apiKey&&<button className="btn-secondary" onClick={async()=>{for(let i=0;i<results.length;i++){if(!enriched[i])await enrichLead(results[i],i);}}} disabled={enriching}>{enriching?"⏳ Enriching…":"🤖 Enrich All"}</button>}
+          <button className="btn-success" onClick={()=>onLeadsFound(results)}>🚀 Use in Workflow</button>
+          {sheetsConfig.enabled&&<button className="btn-secondary" onClick={async()=>{try{await exportLeads(sheetsConfig,results,config);alert("✅ Exported!");}catch(e){alert("❌ "+e.message);}}}>📊 Save to Sheets</button>}
         </div>
       </div>
-
       <div className="leads-grid">
         {results.map((lead,i)=>(
           <div key={i} className={`real-lead-card ${lead.verified?"verified":""}`}>
             <div className="rlc-header">
-              <div>
-                <strong className="rlc-name">{lead.name}</strong>
-                {lead.title&&<div className="rlc-title">{lead.title}</div>}
-              </div>
+              <div><strong className="rlc-name">{lead.name}</strong>{lead.title&&<div className="rlc-title">{lead.title}</div>}</div>
               <div className="rlc-badges">
                 {lead.verified&&<span className="badge-verified">✅ Verified</span>}
                 {lead.score&&<span className="badge-score">⭐ {lead.score}/10</span>}
@@ -561,7 +716,7 @@ Return JSON: {"pain_point":"specific pain point","best_service":"which of our se
             </div>
             <div className="rlc-contact">👤 {lead.contact}</div>
             {lead.email?<div className="rlc-email">📧 <a href={`mailto:${lead.email}`}>{lead.email}</a>{lead.confidence&&<span className="confidence">{lead.confidence}%</span>}</div>
-              :<div className="rlc-email no-email">📧 No email yet — use Hunter.io to find</div>}
+              :<div className="rlc-email no-email">📧 No email — use Hunter.io to find</div>}
             {lead.website&&<div className="rlc-site">🌐 <a href={lead.website} target="_blank" rel="noreferrer">{lead.website}</a></div>}
             {lead.phone&&<div className="rlc-phone">📞 {lead.phone}</div>}
             {lead.linkedin&&<div className="rlc-li">💼 <a href={lead.linkedin} target="_blank" rel="noreferrer">LinkedIn</a></div>}
@@ -569,9 +724,7 @@ Return JSON: {"pain_point":"specific pain point","best_service":"which of our se
             {lead.rating&&<div className="rlc-rating">⭐ {lead.rating} Google Rating</div>}
             <div className="rlc-pain">💡 {enriched[i]?.pain_point||lead.pain_point}</div>
             {lead.opening_line&&<div className="rlc-opener">🎯 {lead.opening_line}</div>}
-            {!enriched[i]&&lead.website&&(
-              <button className="btn-enrich" onClick={()=>enrichLead(lead,i)} disabled={enriching}>🤖 AI Enrich</button>
-            )}
+            {!enriched[i]&&lead.website&&<button className="btn-enrich" onClick={()=>enrichLead(lead,i)} disabled={enriching}>🤖 Enrich</button>}
           </div>
         ))}
       </div>
@@ -582,57 +735,48 @@ Return JSON: {"pain_point":"specific pain point","best_service":"which of our se
 // ── Social Lead Finder Tab ────────────────────────────────────────────────────
 function SocialLeadFinderTab({config,apiKey,onLeadsFound}){
   const [activePlatform,setActivePlatform]=useState("linkedin");
-  const [generatedLeads,setGeneratedLeads]=useState(null);
-  const [generating,setGenerating]=useState(false);
-  const [outreachScript,setOutreachScript]=useState(null);
-  const [generatingScript,setGeneratingScript]=useState(false);
+  const [leads,setLeads]=useState(null);const [generating,setGenerating]=useState(false);
+  const [script,setScript]=useState(null);const [generatingScript,setGeneratingScript]=useState(false);
   const platform=SOCIAL_PLATFORMS.find(p=>p.key===activePlatform);
 
   async function generateLeads(){
-    if(!apiKey){alert("Anthropic API key required.");return;}
-    setGenerating(true);setGeneratedLeads(null);setOutreachScript(null);
+    if(!apiKey){alert("API key required.");return;}
+    setGenerating(true);setLeads(null);setScript(null);
     try{
-      const raw=await callClaude(apiKey,
-        "You are a B2B social media lead expert. Return ONLY valid JSON, no markdown.",
-        `Generate 6 realistic ${config.niche} leads in ${config.country} found on ${platform.name} needing ${config.service}.
-Return JSON: [{"name":"Business","contact":"Name","email":"real@domain.com","website":"https://...","pain_point":"specific problem","size":"small/medium","platform":"${platform.name}","platform_handle":"@handle","platform_activity":"what they post","best_approach":"opening line"}]
-Use realistic emails matching the business domain. NOT example.com.`
-      );
-      setGeneratedLeads(parseJSON(raw)||[]);
+      const raw=await callClaude(apiKey,"You are a B2B social lead expert. Return ONLY valid JSON.",
+        `Generate 6 ${config.niche} leads in ${config.country} found on ${platform.name} needing ${config.service}.
+JSON: [{"name":"Business","contact":"Name","email":"name@bizname.com","website":"https://...","pain_point":"problem","size":"small","platform":"${platform.name}","platform_handle":"@handle","platform_activity":"what they post","best_approach":"opening line"}]`);
+      setLeads(parseJSON(raw)||[]);
     }catch(e){alert("Error: "+e.message);}
     setGenerating(false);
   }
 
   async function generateScript(){
-    if(!apiKey||!generatedLeads) return;
-    setGeneratingScript(true);setOutreachScript(null);
+    if(!apiKey||!leads) return;
+    setGeneratingScript(true);setScript(null);
     try{
-      const lead=generatedLeads[0];
-      const text=await callClaude(apiKey,
-        `You are an expert in ${platform.name} cold outreach for B2B services.`,
-        `Write a ${platform.name} 4-message outreach sequence for ${config.yourName||"a service provider"} from ${config.companyName||config.service}.
+      const lead=leads[0];
+      const text=await callClaude(apiKey,`You are a ${platform.name} outreach expert.`,
+        `Write a 4-message ${platform.name} sequence for ${config.yourName||"us"} / ${config.companyName||config.service}.
 Target: ${config.niche} in ${config.country}. Service: ${config.service}. Price: ${config.price}.
-Example lead: ${lead.name} — Pain: ${lead.pain_point}.
-Messages: 1) Connection/Follow request, 2) First message (value only), 3) Day 3-5 soft pitch, 4) Day 7-10 CTA.
-${platform.key==="linkedin"?"LinkedIn format: professional":"Instagram/X format: casual, mention their content"}.
-Label each message clearly.`
-      );
-      setOutreachScript(text);
+Lead: ${lead.name} — Pain: ${lead.pain_point}.
+Messages: 1) Connect/Follow, 2) First message (value only), 3) Day 3–5 soft pitch, 4) Day 7–10 CTA.
+Label each message clearly.`);
+      setScript(text);
     }catch(e){alert("Error: "+e.message);}
     setGeneratingScript(false);
   }
 
   return(<div className="real-lead-wrap">
-    <div className="real-lead-header">
-      <h2>🔍 Social Media Lead Finder</h2>
-      <p className="sub">Find prospects on LinkedIn, Instagram & X — with platform-specific outreach scripts</p>
+    <div className="real-lead-header"><h2>🔍 Social Media Lead Finder</h2>
+      <p className="sub">Find prospects on LinkedIn, Instagram & X with platform-specific outreach scripts</p>
       <div className="workflow-target-badge">{COUNTRIES.find(c=>c.name===config.country)?.flag} {config.country} · {config.niche}</div>
     </div>
     <div className="platform-tabs">
       {SOCIAL_PLATFORMS.map(p=>(
         <button key={p.key} className={`platform-tab ${activePlatform===p.key?"active":""}`}
           style={activePlatform===p.key?{borderColor:p.color,background:p.bgColor,color:p.color}:{}}
-          onClick={()=>{setActivePlatform(p.key);setGeneratedLeads(null);setOutreachScript(null);}}>
+          onClick={()=>{setActivePlatform(p.key);setLeads(null);setScript(null);}}>
           <span className="platform-tab-icon">{p.icon}</span><span>{p.name}</span>
         </button>
       ))}
@@ -648,33 +792,34 @@ Label each message clearly.`
       </div>
       <div className="platform-search-links">
         <a href={platform.searchUrl(config.niche,config.country)} target="_blank" rel="noreferrer" className="platform-link-btn" style={{background:platform.color}}>🔗 Open {platform.name} Search</a>
-        {platform.companyUrl&&<a href={platform.companyUrl(config.niche,config.country)} target="_blank" rel="noreferrer" className="platform-link-btn-outline" style={{color:platform.color,borderColor:platform.color}}>🏢 Company Search</a>}
+        {platform.companyUrl&&<a href={platform.companyUrl(config.niche,config.country)} target="_blank" rel="noreferrer" className="platform-link-btn-outline" style={{color:platform.color,borderColor:platform.color}}>🏢 Companies</a>}
       </div>
     </div>
     <div className="card">
-      <h3>🤖 AI Script Generator for {platform.name}</h3>
+      <h3>🤖 Script Generator</h3>
       <div className="ai-lead-actions">
-        <button className="btn-primary" onClick={generateLeads} disabled={generating}>{generating?`⏳ Finding…`:`${platform.icon} Generate Sample Leads`}</button>
-        {generatedLeads&&<button className="btn-secondary" onClick={generateScript} disabled={generatingScript}>{generatingScript?"⏳ Writing…":"✍️ Generate Outreach Script"}</button>}
-        {generatedLeads&&<button className="btn-success" onClick={()=>onLeadsFound(generatedLeads)}>🚀 Use in Workflow</button>}
+        <button className="btn-primary" onClick={generateLeads} disabled={generating}>{generating?"⏳ Finding…":`${platform.icon} Generate Sample Leads`}</button>
+        {leads&&<button className="btn-secondary" onClick={generateScript} disabled={generatingScript}>{generatingScript?"⏳ Writing…":"✍️ Outreach Script"}</button>}
+        {leads&&<button className="btn-success" onClick={()=>onLeadsFound(leads)}>🚀 Use in Workflow</button>}
       </div>
-      {generatedLeads&&<div className="generated-leads-list">
-        {generatedLeads.map((l,i)=><div key={i} className="social-lead-card">
-          <div className="social-lead-top"><div className="social-lead-identity">
-            <div className="platform-avatar" style={{background:platform.bgColor,color:platform.color}}>{platform.icon}</div>
-            <div><strong>{l.name}</strong><div className="social-lead-handle">{l.platform_handle}</div></div>
-          </div><span className="tag">{l.size}</span></div>
+      {leads&&<div className="generated-leads-list">
+        {leads.map((l,i)=><div key={i} className="social-lead-card">
+          <div className="social-lead-top">
+            <div className="social-lead-identity">
+              <div className="platform-avatar" style={{background:platform.bgColor,color:platform.color}}>{platform.icon}</div>
+              <div><strong>{l.name}</strong><div className="social-lead-handle">{l.platform_handle}</div></div>
+            </div><span className="tag">{l.size}</span>
+          </div>
           <div className="social-lead-details"><div>👤 {l.contact}</div><div>📧 {l.email}</div><div>🌐 {l.website}</div><div>📊 {l.platform_activity}</div></div>
           <div className="social-lead-pain">💡 {l.pain_point}</div>
           <div className="social-lead-approach"><span className="approach-label">Opening:</span> {l.best_approach}</div>
         </div>)}
       </div>}
-      {outreachScript&&<div className="outreach-script-box">
-        <div className="outreach-script-header">
-          <h4>✉️ {platform.name} Outreach Sequence</h4>
-          <button className="btn-ghost copy-btn" onClick={()=>navigator.clipboard.writeText(outreachScript)}>📋 Copy</button>
+      {script&&<div className="outreach-script-box">
+        <div className="outreach-script-header"><h4>✉️ {platform.name} Sequence</h4>
+          <button className="btn-ghost copy-btn" onClick={()=>navigator.clipboard.writeText(script)}>📋 Copy</button>
         </div>
-        <pre className="result-pre">{outreachScript}</pre>
+        <pre className="result-pre">{script}</pre>
       </div>}
     </div>
   </div>);
@@ -694,90 +839,54 @@ function WorkflowTab({config,apiKey,sheetsConfig,stages,setStages,logs,setLogs,r
     if(!sheetsConfig.enabled||!sheetsConfig.apiKey||!sheetsConfig.sheetId) return;
     setSheetsSaving(true);setSheetsStatus(null);
     try{
-      log("📊 Saving to Google Sheets…");
+      log("📊 Saving to Sheets…");
       if(Array.isArray(s.leads?.result)&&s.leads.result.length>0) await exportLeads(sheetsConfig,s.leads.result,config);
       await exportWorkflow(sheetsConfig,s,config);
       log("✅ Saved to Sheets");setSheetsStatus({ok:true,msg:"Saved to Google Sheets!"});
-    }catch(e){log("⚠️ Sheets error: "+e.message);setSheetsStatus({ok:false,msg:e.message});}
+    }catch(e){log("⚠️ Sheets: "+e.message);setSheetsStatus({ok:false,msg:e.message});}
     setSheetsSaving(false);
   }
 
   async function runAll(){
-    if(!apiKey){alert("Anthropic API key required.");return;}
+    if(!apiKey){alert("API key required.");return;}
     setRunning(true);setLogs([]);setSheetsStatus(null);
     const fresh={leads:{},email:{},followup:{},proposal:{},meeting:{}};
     let leads=null;
 
-    // Step 1 — use preloaded or generate
     if(preloaded){
       log(`✅ Using ${preloaded.length} pre-loaded leads (${preloaded[0]?.platform||"imported"})`);
-      leads=preloaded;fresh.leads={status:"done",result:leads};
-      setStage("leads",{status:"done",result:leads});
+      leads=preloaded;fresh.leads={status:"done",result:leads};setStage("leads",{status:"done",result:leads});
     } else {
       try{
-        setStage("leads",{status:"running"});
-        log("🔍 Researching leads for "+config.niche+" in "+config.country);
-        const raw=await callClaude(apiKey,"You are a B2B lead research expert. Return ONLY valid JSON.",
-          `Generate 5 realistic ${config.niche} leads in ${config.country} needing ${config.service}. JSON: [{"name":"Biz","contact":"Name","email":"email@domain.com","website":"https://...","pain_point":"problem","size":"small","platform":"Direct","verified":false}]`);
+        setStage("leads",{status:"running"});log("🔍 Finding leads for "+config.niche+" in "+config.country);
+        const raw=await callClaude(apiKey,"Return ONLY valid JSON.",
+          `5 ${config.niche} leads in ${config.country} needing ${config.service}. JSON: [{"name":"Biz","contact":"Name","email":"name@biz.com","website":"https://biz.com","pain_point":"problem","size":"small","platform":"Direct","verified":false}]`);
         leads=parseJSON(raw)||[];
         setStage("leads",{status:"done",result:leads});fresh.leads={status:"done",result:leads};
         log(`✅ ${leads.length} leads found`);
       }catch(e){setStage("leads",{status:"error",result:e.message});log("❌ "+e.message);}
     }
 
-    // Step 2 — Email
-    try{
-      setStage("email",{status:"running"});log("✉️ Drafting outreach email…");
-      const lead=leads?.[0];
-      const src=lead?.platform&&lead.platform!=="Direct"?`\nNote: Lead from ${lead.platform}.`:"";
-      const text=await callClaude(apiKey,"You are an expert cold email copywriter.",
-        `Write a cold email from ${config.yourName||"us"} at ${config.companyName||config.service} to ${lead?.contact||"owner"} at ${lead?.name||config.niche}.
-Service: ${config.service}. Pain: ${lead?.pain_point||"scaling online"}. Price: ${config.price}. Max 150 words. Include subject line.${src}`);
-      setStage("email",{status:"done",result:text});fresh.email={status:"done",result:text};
-      log("✅ Email drafted");
-    }catch(e){setStage("email",{status:"error",result:e.message});log("❌ "+e.message);}
+    const steps=[
+      {key:"email",log:"✉️ Drafting outreach email…",ok:"✅ Email drafted",
+       prompt:(l)=>`Cold email from ${config.yourName||"us"} / ${config.companyName||config.service} to ${l?.contact||"owner"} at ${l?.name||config.niche}. Service: ${config.service}. Pain: ${l?.pain_point||"scaling"}. Price: ${config.price}. 130 words max. Subject line first as "Subject: ...".`},
+      {key:"followup",log:"🔁 Building follow-up sequence…",ok:"✅ Follow-up ready",
+       prompt:()=>`3-email follow-up: Day 3 (value), Day 7 (case study), Day 14 (close). ${config.service} → ${config.niche} in ${config.country}. Sender: ${config.yourName||"us"} / ${config.companyName||config.service}. Price: ${config.price}. Label each.`},
+      {key:"proposal",log:"📄 Generating proposal…",ok:"✅ Proposal ready",
+       prompt:()=>`${config.service} proposal for ${config.niche} client in ${config.country}. Sections: Summary, Problem, Solution, Deliverables+Timeline, Investment (${config.price}), Why Us, Next Steps. Agency: ${config.companyName||config.yourName||"Our Agency"}.`},
+      {key:"meeting",log:"📅 Writing meeting message…",ok:"✅ Meeting ready",
+       prompt:(l)=>`Meeting request to ${l?.contact||"prospect"} at ${l?.name||config.niche} for 30-min discovery about ${config.service}. ${config.calendlyLink?`Link: ${config.calendlyLink}`:"Ask availability."} Sender: ${config.yourName||"us"} / ${config.companyName||config.service}.`},
+    ];
 
-    // Step 3 — Follow-up
-    try{
-      setStage("followup",{status:"running"});log("🔁 Building follow-up sequence…");
-      const text=await callClaude(apiKey,"You are an email follow-up expert.",
-        `Write a 3-email follow-up sequence for ${config.service} → ${config.niche} in ${config.country}.
-Day 3 (value add), Day 7 (case study), Day 14 (soft close).
-Sender: ${config.yourName||"us"} / ${config.companyName||config.service}. Price: ${config.price}. Label each clearly.`);
-      setStage("followup",{status:"done",result:text});fresh.followup={status:"done",result:text};
-      log("✅ Follow-up sequence ready");
-    }catch(e){setStage("followup",{status:"error",result:e.message});log("❌ "+e.message);}
-
-    // Step 4 — Proposal
-    try{
-      setStage("proposal",{status:"running"});log("📄 Generating proposal…");
-      const text=await callClaude(apiKey,"You are a professional proposal writer.",
-        `Create a ${config.service} proposal for a ${config.niche} client in ${config.country}.
-Sections: Executive Summary, Problem, Solution, Deliverables + Timeline, Investment (${config.price}), Why Us, Next Steps.
-Agency: ${config.companyName||config.yourName||"Our Agency"}.`);
-      setStage("proposal",{status:"done",result:text});fresh.proposal={status:"done",result:text};
-      log("✅ Proposal ready");
-    }catch(e){setStage("proposal",{status:"error",result:e.message});log("❌ "+e.message);}
-
-    // Step 5 — Meeting
-    try{
-      setStage("meeting",{status:"running"});log("📅 Writing meeting message…");
-      const lead=leads?.[0];
-      const text=await callClaude(apiKey,"You are a meeting scheduler expert.",
-        `Write a meeting booking message to ${lead?.contact||"prospect"} at ${lead?.name||config.niche}.
-Purpose: 30-min discovery call about ${config.service}.
-${config.calendlyLink?`Booking link: ${config.calendlyLink}`:"Ask for availability."}
-Sender: ${config.yourName||"us"} from ${config.companyName||config.service}.
-Suggest: next Tuesday 10AM or Wednesday 2PM.`);
-      const d=new Date();d.setDate(d.getDate()+7);d.setHours(10,0,0,0);
-      const gcalLink=buildCalendarLink({
-        title:`Discovery Call – ${config.companyName||config.service} × ${lead?.name||config.niche}`,
-        description:`30-min call about ${config.service}.\nContact: ${lead?.contact||""}\nWebsite: ${lead?.website||""}`,
-        startISO:d.toISOString(),durationMins:30,location:config.calendlyLink||"Google Meet",
-      });
-      setStage("meeting",{status:"done",result:text,gcalLink});fresh.meeting={status:"done",result:text,gcalLink};
-      log("✅ Meeting message ready");
-    }catch(e){setStage("meeting",{status:"error",result:e.message});log("❌ "+e.message);}
+    for(const step of steps){
+      try{
+        setStage(step.key,{status:"running"});log(step.log);
+        const text=await callClaude(apiKey,"You are an expert B2B sales professional.",step.prompt(leads?.[0]));
+        const extra=step.key==="meeting"?{gcalLink:buildCalendarLink({title:`Discovery – ${config.companyName||config.service} × ${leads?.[0]?.name||config.niche}`,description:`30-min about ${config.service}`,startISO:(()=>{const d=new Date();d.setDate(d.getDate()+7);d.setHours(10,0,0,0);return d.toISOString();})(),durationMins:30,location:config.calendlyLink||"Google Meet"})}:{};
+        setStage(step.key,{status:"done",result:text,...extra});fresh[step.key]={status:"done",result:text,...extra};
+        log(step.ok);
+      }catch(e){setStage(step.key,{status:"error",result:e.message});log("❌ "+e.message);}
+    }
 
     log("🎉 Workflow complete! Click any stage to view.");
     setRunning(false);
@@ -785,7 +894,7 @@ Suggest: next Tuesday 10AM or Wednesday 2PM.`);
   }
 
   return(<div className="workflow-wrap">
-    {modal&&(<div className="modal-overlay" onClick={()=>setModal(null)}>
+    {modal&&<div className="modal-overlay" onClick={()=>setModal(null)}>
       <div className="modal" onClick={e=>e.stopPropagation()}>
         <div className="modal-header">
           <h3>{STAGE_META.find(m=>m.key===modal)?.icon} {STAGE_META.find(m=>m.key===modal)?.label}</h3>
@@ -794,19 +903,16 @@ Suggest: next Tuesday 10AM or Wednesday 2PM.`);
         <div className="modal-body">
           {modal==="leads"&&Array.isArray(stages.leads?.result)?<LeadTable leads={stages.leads.result}/>
             :<pre className="result-pre">{typeof stages[modal]?.result==="string"?stages[modal].result:JSON.stringify(stages[modal]?.result,null,2)}</pre>}
-          {modal==="meeting"&&stages.meeting?.gcalLink&&(
-            <a className="btn-primary gcal-btn" href={stages.meeting.gcalLink} target="_blank" rel="noreferrer">📅 Add to Google Calendar</a>
-          )}
+          {modal==="meeting"&&stages.meeting?.gcalLink&&<a className="btn-primary gcal-btn" href={stages.meeting.gcalLink} target="_blank" rel="noreferrer">📅 Add to Google Calendar</a>}
         </div>
       </div>
-    </div>)}
-
+    </div>}
     <div className="workflow-header">
       <div>
         <h2>🚀 Full Workflow</h2>
-        <p className="sub">Find Lead → Research Site → Draft Email → Follow Up → Proposal → Book Meeting</p>
+        <p className="sub">Find Lead → Research → Draft Email → Follow Up → Proposal → Meeting</p>
         {config.country&&<div className="workflow-target-badge">{COUNTRIES.find(c=>c.name===config.country)?.flag} {config.country} · {config.niche}</div>}
-        {preloaded&&<div className="preloaded-badge">✅ {preloaded.length} real leads loaded from {preloaded[0]?.platform||"import"} — ready to use</div>}
+        {preloaded&&<div className="preloaded-badge">✅ {preloaded.length} leads pre-loaded from {preloaded[0]?.platform||"import"}</div>}
       </div>
       <div className="workflow-actions">
         <button className="btn-primary btn-run" onClick={runAll} disabled={running}>{running?"⏳ Running…":"▶ Run Full Workflow"}</button>
@@ -849,82 +955,57 @@ function LeadTable({leads}){
       <div className="lead-detail">📧 <a href={`mailto:${l.email}`}>{l.email}</a></div>
       {l.website&&<div className="lead-detail">🌐 <a href={l.website} target="_blank" rel="noreferrer">{l.website}</a></div>}
       {l.phone&&<div className="lead-detail">📞 {l.phone}</div>}
-      {l.linkedin&&<div className="lead-detail">💼 <a href={l.linkedin} target="_blank" rel="noreferrer">LinkedIn</a></div>}
       <div className="lead-pain">💡 {l.pain_point}</div>
-      {l.opening_line&&<div className="lead-approach">🎯 {l.opening_line}</div>}
     </div>
   ))}</div>);
 }
 
-// ── Pipeline Tab (was "Leads") ────────────────────────────────────────────────
-const PIPELINE_STAGES=["New","Contacted","Replied","Meeting Booked","Proposal Sent","Won","Lost"];
-const PIPELINE_COLORS={New:"#64748b",Contacted:"#3b82f6",Replied:"#f59e0b",
-  "Meeting Booked":"#8b5cf6","Proposal Sent":"#ec4899",Won:"#22c55e",Lost:"#ef4444"};
-
+// ── Pipeline Tab ──────────────────────────────────────────────────────────────
 function PipelineTab({apiKey,config,stages,sheetsConfig}){
   const leads=Array.isArray(stages.leads?.result)?stages.leads.result:[];
   const [selected,setSelected]=useState(null);
-  const [status,setStatus]=useState(()=>{
-    try{return JSON.parse(localStorage.getItem("cf_status")||"{}");}catch{return {};}
-  });
-  const [notes,setNotes]=useState(()=>{
-    try{return JSON.parse(localStorage.getItem("cf_notes")||"{}");}catch{return {};}
-  });
-  const [content,setContent]=useState({});
-  const [loading,setLoading]=useState({});
-  const [sheetsSaved,setSheetsSaved]=useState({});
-
+  const [status,setStatus]=useState(()=>{try{return JSON.parse(localStorage.getItem("cf_status")||"{}");}catch{return {};}});
+  const [notes,setNotes]=useState(()=>{try{return JSON.parse(localStorage.getItem("cf_notes")||"{}");}catch{return {};}});
+  const [content,setContent]=useState({});const [loading,setLoading]=useState({});const [sheetsSaved,setSheetsSaved]=useState({});
   useEffect(()=>{localStorage.setItem("cf_status",JSON.stringify(status));},[status]);
   useEffect(()=>{localStorage.setItem("cf_notes",JSON.stringify(notes));},[notes]);
 
+  const leadId=l=>l.email||l.name;
   async function generate(lead,type){
     if(!apiKey){alert("API key required");return;}
-    const key=`${lead.email||lead.name}-${type}`;
-    setLoading(l=>({...l,[key]:true}));
+    const key=`${leadId(lead)}-${type}`;setLoading(l=>({...l,[key]:true}));
     try{
-      const platformNote=lead.platform&&lead.platform!=="Direct"?`Lead from ${lead.platform}. Handle: ${lead.platform_handle||""}.`:"";
-      const verifiedNote=lead.verified?"Email verified ✅":"";
+      const ph=lead.platform&&lead.platform!=="Direct"?`Lead from ${lead.platform}.`:"";
       let prompt="";
-      if(type==="email") prompt=`Write a personalized cold email to ${lead.contact} at ${lead.name} about ${config.service}. Pain: ${lead.pain_point}. Price: ${config.price}. Sender: ${config.yourName||"us"} / ${config.companyName||config.service}. Subject + body. Max 120 words. ${platformNote} ${verifiedNote}`;
-      else if(type==="dm") prompt=`Write a ${lead.platform||"social media"} DM to ${lead.contact} at ${lead.name}. Pain: ${lead.pain_point}. Under 100 words, value-first, no pitch yet. ${lead.best_approach?`Opening: ${lead.best_approach}`:""}`;
-      else if(type==="proposal") prompt=`Concise proposal for ${lead.name} (${lead.contact}) for ${config.service}. Pain: ${lead.pain_point}. Investment: ${config.price}. Agency: ${config.companyName||config.service}.`;
-      else if(type==="meeting") prompt=`Meeting request to ${lead.contact} at ${lead.name} for 30-min discovery about ${config.service}. ${config.calendlyLink?`Link: ${config.calendlyLink}`:"Ask availability."} Sender: ${config.yourName||"us"}.`;
-
+      if(type==="email") prompt=`Cold email to ${lead.contact} at ${lead.name} about ${config.service}. Pain: ${lead.pain_point}. Price: ${config.price}. Sender: ${config.yourName||"us"} / ${config.companyName||config.service}. Subject + body. 120 words max. ${ph}`;
+      else if(type==="dm") prompt=`${lead.platform||"Social"} DM to ${lead.contact} at ${lead.name}. Pain: ${lead.pain_point}. 100 words, value-first, no pitch. ${lead.best_approach?`Opening: ${lead.best_approach}`:""}`;
+      else if(type==="proposal") prompt=`Proposal for ${lead.name} (${lead.contact}) for ${config.service}. Pain: ${lead.pain_point}. Investment: ${config.price}. Agency: ${config.companyName||config.service}.`;
+      else if(type==="meeting") prompt=`Meeting request to ${lead.contact} at ${lead.name} for 30-min about ${config.service}. ${config.calendlyLink?`Link: ${config.calendlyLink}`:"Ask availability."} Sender: ${config.yourName||"us"}.`;
       const text=await callClaude(apiKey,"You are a professional B2B sales expert.",prompt);
       setContent(c=>({...c,[key]:text}));
-      setStatus(s=>({...s,[lead.email||lead.name]:type==="email"||type==="dm"?"Contacted":s[lead.email||lead.name]||"New"}));
+      setStatus(s=>({...s,[leadId(lead)]:type==="email"||type==="dm"?"Contacted":s[leadId(lead)]||"New"}));
       if(sheetsConfig.enabled&&sheetsConfig.apiKey&&sheetsConfig.sheetId){
-        try{await exportAction(sheetsConfig,lead,type,text,config);setSheetsSaved(s=>({...s,[key]:true}));}
-        catch(e){console.warn(e.message);}
+        try{await exportAction(sheetsConfig,lead,type,text,config);setSheetsSaved(s=>({...s,[key]:true}));}catch(e){console.warn(e);}
       }
     }catch(e){setContent(c=>({...c,[key]:"Error: "+e.message}));}
     setLoading(l=>({...l,[key]:false}));
   }
 
-  const leadId=l=>l.email||l.name;
-  const grouped=PIPELINE_STAGES.reduce((acc,s)=>{
-    acc[s]=leads.filter(l=>(status[leadId(l)]||"New")===s);return acc;
-  },{});
+  const grouped=PIPELINE_STAGES.reduce((acc,s)=>{acc[s]=leads.filter(l=>(status[leadId(l)]||"New")===s);return acc;},{});
   const wonCount=grouped["Won"]?.length||0;
   const contactedCount=leads.filter(l=>status[leadId(l)]&&status[leadId(l)]!=="New").length;
 
-  if(leads.length===0) return(
-    <div className="empty-state"><div className="empty-icon">👥</div>
-      <p>No leads yet. Go to <strong>📥 Real Leads</strong> to import real contacts, then run <strong>🚀 Workflow</strong>.</p>
-    </div>);
+  if(leads.length===0) return(<div className="empty-state"><div className="empty-icon">👥</div><p>Import leads in <strong>📥 Real Leads</strong> then run <strong>🚀 Workflow</strong>.</p></div>);
 
   return(<div className="pipeline-wrap">
     <div className="pipeline-header">
-      <h2>👥 Sales Pipeline</h2>
-      <p className="sub">Track every lead from first contact to closed deal</p>
+      <h2>👥 Sales Pipeline</h2><p className="sub">Track every lead from first contact to closed deal</p>
       <div className="pipeline-stats">
-        <span className="pstat"><strong>{leads.length}</strong> total leads</span>
+        <span className="pstat"><strong>{leads.length}</strong> total</span>
         <span className="pstat blue"><strong>{contactedCount}</strong> contacted</span>
-        <span className="pstat green"><strong>{wonCount}</strong> won</span>
+        <span className="pstat green"><strong>{wonCount}</strong> won 🎉</span>
       </div>
     </div>
-
-    {/* Kanban overview */}
     <div className="kanban-strip">
       {PIPELINE_STAGES.map(s=>(
         <div key={s} className="kanban-col" style={{borderTopColor:PIPELINE_COLORS[s]}}>
@@ -933,37 +1014,23 @@ function PipelineTab({apiKey,config,stages,sheetsConfig}){
         </div>
       ))}
     </div>
-
-    {/* Two-panel layout */}
     <div className="leads-tab">
       <div className="leads-list">
-        {leads.map((lead,i)=>{
-          const st=status[leadId(lead)]||"New";
-          return(<div key={i} className={`lead-row ${selected===i?"active":""}`} onClick={()=>setSelected(i)}>
-            <div className="lead-row-main">
-              <strong>{lead.name}</strong>
-              {lead.verified&&<span style={{fontSize:10,color:"#22c55e"}}>✅</span>}
-            </div>
+        {leads.map((lead,i)=>{const st=status[leadId(lead)]||"New";return(
+          <div key={i} className={`lead-row ${selected===i?"active":""}`} onClick={()=>setSelected(i)}>
+            <div className="lead-row-main"><strong>{lead.name}</strong>{lead.verified&&<span style={{fontSize:10,color:"#22c55e"}}>✅</span>}</div>
             <div style={{display:"flex",gap:6,alignItems:"center",marginTop:3}}>
               <span className="lead-row-sub">{lead.contact}</span>
-              <span className="status-dot" style={{background:PIPELINE_COLORS[st],fontSize:10,padding:"1px 6px",borderRadius:4,color:"#fff"}}>{st}</span>
+              <span style={{background:PIPELINE_COLORS[st],fontSize:10,padding:"1px 6px",borderRadius:4,color:"#fff",fontWeight:700}}>{st}</span>
             </div>
-          </div>);
-        })}
+          </div>);})}
       </div>
-
       {selected!==null&&(()=>{
         const lead=leads[selected];const lid=leadId(lead);const st=status[lid]||"New";
         return(<div className="lead-detail-panel">
-          <div className="lead-detail-header">
-            <h3>{lead.name}</h3>
-            <div className="lead-tags">
-              <span className="tag">{lead.size}</span>
-              {lead.verified&&<span className="tag tag-green">✅ Verified</span>}
-            </div>
+          <div className="lead-detail-header"><h3>{lead.name}</h3>
+            <div className="lead-tags"><span className="tag">{lead.size}</span>{lead.verified&&<span className="tag tag-green">✅ Verified</span>}</div>
           </div>
-
-          {/* Status Changer */}
           <div className="status-changer">
             <label style={{fontSize:12,fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>Pipeline Stage</label>
             <div className="status-options">
@@ -976,42 +1043,34 @@ function PipelineTab({apiKey,config,stages,sheetsConfig}){
               ))}
             </div>
           </div>
-
           <div className="lead-info-grid">
             <div>👤 {lead.contact}{lead.title?` · ${lead.title}`:""}</div>
             <div>📧 <a href={`mailto:${lead.email}`}>{lead.email||"No email"}</a></div>
             {lead.website&&<div>🌐 <a href={lead.website} target="_blank" rel="noreferrer">{lead.website}</a></div>}
             {lead.phone&&<div>📞 {lead.phone}</div>}
-            {lead.linkedin&&<div>💼 <a href={lead.linkedin} target="_blank" rel="noreferrer">LinkedIn Profile</a></div>}
             <div>💡 {lead.pain_point}</div>
           </div>
-
-          {/* Notes */}
           <div className="field" style={{marginBottom:14}}>
             <label>📝 Notes</label>
-            <textarea className="notes-area" placeholder="Add notes about this lead…" value={notes[lid]||""} onChange={e=>setNotes(n=>({...n,[lid]:e.target.value}))} rows={3}/>
+            <textarea className="notes-area" placeholder="Add notes…" value={notes[lid]||""} onChange={e=>setNotes(n=>({...n,[lid]:e.target.value}))} rows={3}/>
           </div>
-
-          {/* Actions */}
           <div className="lead-actions">
             {[["email","✉️","Cold Email"],["dm","💬","Social DM"],["proposal","📄","Proposal"],["meeting","📅","Meeting"]].map(([type,icon,label])=>{
               const key=`${lid}-${type}`;
               return(<div key={type} className="lead-action-block">
                 <div className="lead-action-header">
-                  <button className="btn-secondary" disabled={loading[key]} onClick={()=>generate(lead,type)}>
-                    {loading[key]?`⏳ Generating…`:`${icon} ${label}`}
-                  </button>
+                  <button className="btn-secondary" disabled={loading[key]} onClick={()=>generate(lead,type)}>{loading[key]?"⏳ Generating…":`${icon} ${label}`}</button>
                   {sheetsSaved[key]&&<span className="sheets-saved-badge">📊 Saved</span>}
                 </div>
-                {content[key]&&(<div className="generated-content">
+                {content[key]&&<div className="generated-content">
                   <pre>{content[key]}</pre>
                   <div className="generated-actions">
                     <button className="btn-ghost copy-btn" onClick={()=>navigator.clipboard.writeText(content[key])}>📋 Copy</button>
-                    {type==="meeting"&&(<a className="btn-primary gcal-btn"
+                    {type==="meeting"&&<a className="btn-primary gcal-btn"
                       href={buildCalendarLink({title:`Discovery – ${config.companyName||config.service} × ${lead.name}`,description:content[key],startISO:(()=>{const d=new Date();d.setDate(d.getDate()+7);d.setHours(10,0,0,0);return d.toISOString();})(),durationMins:30,location:config.calendlyLink||"Google Meet"})}
-                      target="_blank" rel="noreferrer">📅 Add to Calendar</a>)}
+                      target="_blank" rel="noreferrer">📅 Add to Calendar</a>}
                   </div>
-                </div>)}
+                </div>}
               </div>);
             })}
           </div>
@@ -1025,20 +1084,15 @@ function PipelineTab({apiKey,config,stages,sheetsConfig}){
 function MeetingsTab({config,stages}){
   const leads=Array.isArray(stages.leads?.result)?stages.leads.result:[];
   const slots=[{label:"This Tuesday 10:00 AM",offset:2,hour:10},{label:"This Wednesday 2:00 PM",offset:3,hour:14},{label:"Next Monday 11:00 AM",offset:8,hour:11},{label:"Next Thursday 3:00 PM",offset:11,hour:15}];
-  function makeLink(lead,slot){
-    const d=new Date();d.setDate(d.getDate()+slot.offset);d.setHours(slot.hour,0,0,0);
-    return buildCalendarLink({title:`Discovery – ${config.companyName||config.service} × ${lead?.name||"Prospect"}`,description:`30-min call about ${config.service}.\nContact: ${lead?.contact||""}\nEmail: ${lead?.email||""}`,startISO:d.toISOString(),durationMins:30,location:config.calendlyLink||"Google Meet"});
-  }
+  function makeLink(lead,slot){const d=new Date();d.setDate(d.getDate()+slot.offset);d.setHours(slot.hour,0,0,0);
+    return buildCalendarLink({title:`Discovery – ${config.companyName||config.service} × ${lead?.name||"Prospect"}`,description:`30-min about ${config.service}.\nContact: ${lead?.contact||""}\nEmail: ${lead?.email||""}`,startISO:d.toISOString(),durationMins:30,location:config.calendlyLink||"Google Meet"});}
   return(<div className="meetings-tab">
     <div className="meetings-header"><h2>📅 Meeting Scheduler</h2><p className="sub">Schedule discovery calls to Google Calendar</p></div>
-    {leads.length===0&&<div className="empty-state"><div className="empty-icon">📅</div><p>Run 🚀 Workflow first to generate leads.</p></div>}
+    {leads.length===0&&<div className="empty-state"><div className="empty-icon">📅</div><p>Run 🚀 Workflow first to get leads.</p></div>}
     <div className="meetings-grid">
       {leads.map((lead,i)=>(
         <div key={i} className="meeting-card">
-          <div className="meeting-card-header">
-            <div><strong>{lead.name}</strong><div className="meeting-sub">{lead.contact} · {lead.email}</div></div>
-            <span className="tag">{lead.size}</span>
-          </div>
+          <div className="meeting-card-header"><div><strong>{lead.name}</strong><div className="meeting-sub">{lead.contact} · {lead.email}</div></div><span className="tag">{lead.size}</span></div>
           <div className="meeting-pain">💡 {lead.pain_point}</div>
           <div className="slots-label">📆 Pick a slot:</div>
           <div className="slots">{slots.map((s,si)=><a key={si} href={makeLink(lead,s)} target="_blank" rel="noreferrer" className="slot-btn">🗓 {s.label}</a>)}</div>
@@ -1054,52 +1108,41 @@ function DataStoreTab({sheetsConfig,setSheetsConfig,stages,config}){
   const leads=Array.isArray(stages.leads?.result)?stages.leads.result:[];
   const [testStatus,setTestStatus]=useState(null);const [testing,setTesting]=useState(false);
   const [exporting,setExporting]=useState(false);const [exportStatus,setExportStatus]=useState(null);
-
   async function testConn(){
-    if(!sheetsConfig.apiKey||!sheetsConfig.sheetId){setTestStatus({ok:false,msg:"Enter API Key and Sheet ID first."});return;}
+    if(!sheetsConfig.apiKey||!sheetsConfig.sheetId){setTestStatus({ok:false,msg:"Enter credentials first."});return;}
     setTesting(true);setTestStatus(null);
-    try{
-      const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}?key=${sheetsConfig.apiKey}`);
+    try{const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}?key=${sheetsConfig.apiKey}`);
       if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e?.error?.message||`HTTP ${res.status}`);}
-      const data=await res.json();setTestStatus({ok:true,msg:`Connected: "${data.properties?.title||"Untitled"}"`});
-    }catch(e){setTestStatus({ok:false,msg:e.message});}
-    setTesting(false);
+      const d=await res.json();setTestStatus({ok:true,msg:`Connected: "${d.properties?.title||"Untitled"}"`});}
+    catch(e){setTestStatus({ok:false,msg:e.message});}setTesting(false);
   }
   async function doExport(){
-    if(!sheetsConfig.enabled||!sheetsConfig.apiKey||!sheetsConfig.sheetId){setExportStatus({ok:false,msg:"Enable Sheets and set credentials first."});return;}
+    if(!sheetsConfig.enabled||!sheetsConfig.apiKey||!sheetsConfig.sheetId){setExportStatus({ok:false,msg:"Enable Sheets + add credentials."});return;}
     setExporting(true);setExportStatus(null);
-    try{
-      if(leads.length>0){await exportLeads(sheetsConfig,leads,config);await exportWorkflow(sheetsConfig,stages,config);setExportStatus({ok:true,msg:`Exported ${leads.length} leads!`});}
-      else setExportStatus({ok:false,msg:"No leads to export. Run Workflow first."});
-    }catch(e){setExportStatus({ok:false,msg:e.message});}
-    setExporting(false);
+    try{if(leads.length>0){await exportLeads(sheetsConfig,leads,config);await exportWorkflow(sheetsConfig,stages,config);setExportStatus({ok:true,msg:`Exported ${leads.length} leads!`});}
+      else setExportStatus({ok:false,msg:"No leads yet."});}
+    catch(e){setExportStatus({ok:false,msg:e.message});}setExporting(false);
   }
-
   const verifiedLeads=leads.filter(l=>l.verified);
   const platformBreakdown=leads.reduce((acc,l)=>{const p=l.platform||"Direct";acc[p]=(acc[p]||0)+1;return acc;},{});
-
   return(<div className="datastore-tab">
-    <div className="datastore-header"><h2>📊 Data Store</h2><p className="sub">All leads, actions, and workflow results</p></div>
+    <div className="datastore-header"><h2>📊 Data Store</h2><p className="sub">Leads, emails, and workflow results</p></div>
     <div className="datastore-grid">
       <div className="card datastore-stat"><div className="stat-icon">👥</div><div className="stat-value">{leads.length}</div><div className="stat-label">Total Leads</div></div>
       <div className="card datastore-stat"><div className="stat-icon">✅</div><div className="stat-value">{verifiedLeads.length}</div><div className="stat-label">Verified Emails</div></div>
+      <div className="card datastore-stat"><div className="stat-icon">📬</div><div className="stat-value">{JSON.parse(localStorage.getItem("cf_sent")||"[]").length}</div><div className="stat-label">Emails Sent</div></div>
       <div className="card datastore-stat"><div className="stat-icon">📊</div><div className="stat-value">{sheetsConfig.enabled?"ON":"OFF"}</div><div className="stat-label">Sheets Sync</div></div>
-      <div className="card datastore-stat"><div className="stat-icon">🌍</div><div className="stat-value">{COUNTRIES.find(c=>c.name===config.country)?.flag||"—"}</div><div className="stat-label">{config.country||"No country"}</div></div>
     </div>
-
-    {Object.keys(platformBreakdown).length>0&&<div className="card">
-      <h3>📡 Lead Sources</h3>
+    {Object.keys(platformBreakdown).length>0&&<div className="card"><h3>📡 Lead Sources</h3>
       <div className="platform-breakdown">
         {Object.entries(platformBreakdown).map(([p,n])=>(
           <div key={p} className="platform-stat-item">
             <span>{p==="Hunter.io"?"🎯":p==="Apollo.io"?"🚀":p==="Google Places"?"📍":p==="CSV Import"?"📋":"🤖"}</span>
-            <span className="platform-stat-name">{p}</span>
-            <span className="platform-stat-count">{n} leads</span>
+            <span className="platform-stat-name">{p}</span><span className="platform-stat-count">{n}</span>
           </div>
         ))}
       </div>
     </div>}
-
     <div className="card">
       <h3>🔗 Google Sheets</h3>
       <div className="sheets-connection-row">
@@ -1109,24 +1152,18 @@ function DataStoreTab({sheetsConfig,setSheetsConfig,stages,config}){
       </div>
       <div className="connection-actions">
         <button className="btn-secondary" onClick={testConn} disabled={testing}>{testing?"⏳ Testing…":"🔌 Test Connection"}</button>
-        <button className="btn-primary" onClick={doExport} disabled={exporting||!sheetsConfig.enabled}>{exporting?"⏳ Exporting…":"📤 Export All Now"}</button>
+        <button className="btn-primary" onClick={doExport} disabled={exporting||!sheetsConfig.enabled}>{exporting?"⏳ Exporting…":"📤 Export All"}</button>
       </div>
       {testStatus&&<div className={`sheets-status ${testStatus.ok?"ok":"error"}`}>{testStatus.ok?"✅":"❌"} {testStatus.msg}</div>}
       {exportStatus&&<div className={`sheets-status ${exportStatus.ok?"ok":"error"}`}>{exportStatus.ok?"✅":"❌"} {exportStatus.msg}</div>}
     </div>
-
-    {leads.length>0&&<div className="card">
-      <h3>👥 Lead Data Preview</h3>
+    {leads.length>0&&<div className="card"><h3>👥 Lead Preview</h3>
       <div className="leads-preview-table">
         <div className="leads-table-header"><span>Business</span><span>Contact</span><span>Source</span><span>Email</span><span>Verified</span></div>
-        {leads.map((l,i)=>(
-          <div key={i} className="leads-table-row">
-            <span><strong>{l.name}</strong></span><span>{l.contact}</span>
-            <span>{l.platform||"Direct"}</span>
-            <span className="email-cell">{l.email||"—"}</span>
-            <span>{l.verified?"✅":"❓"}</span>
-          </div>
-        ))}
+        {leads.map((l,i)=><div key={i} className="leads-table-row">
+          <span><strong>{l.name}</strong></span><span>{l.contact}</span><span>{l.platform||"Direct"}</span>
+          <span className="email-cell">{l.email||"—"}</span><span>{l.verified?"✅":"❓"}</span>
+        </div>)}
       </div>
     </div>}
   </div>);
@@ -1142,15 +1179,24 @@ export default function App(){
   const [stages,setStages]=useState({});
   const [logs,setLogs]=useState([]);
   const [running,setRunning]=useState(false);
+  const [gmailState,setGmailState]=useState({token:null,profile:null,connected:false});
 
   useEffect(()=>{if(apiKey)sessionStorage.setItem("cf_key",apiKey);},[apiKey]);
   useEffect(()=>{localStorage.setItem("cf_config",JSON.stringify(config));},[config]);
   useEffect(()=>{localStorage.setItem("cf_sheets",JSON.stringify({...sheetsConfig,apiKey:""}));},[sheetsConfig]);
   useEffect(()=>{sessionStorage.setItem("cf_apikeys",JSON.stringify(apiKeys));},[apiKeys]);
 
+  // Load Google Identity Services script
+  useEffect(()=>{
+    if(document.getElementById("google-gsi")) return;
+    const s=document.createElement("script");
+    s.id="google-gsi";s.src="https://accounts.google.com/gsi/client";s.async=true;s.defer=true;
+    document.head.appendChild(s);
+  },[]);
+
   function handleLeadsFound(leads){
     setStages(s=>({...s,leads:{status:"done",result:leads}}));
-    setTab(3); // Jump to Workflow
+    setTab(3);
   }
 
   return(<div className="app">
@@ -1163,7 +1209,10 @@ export default function App(){
             <div className="logo-sub">Real Leads → Research → Email → Follow Up → Meeting → Proposal</div>
           </div>
         </div>
-        {sheetsConfig.enabled&&<div className="sheets-badge">📊 Sheets Active</div>}
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          {gmailState.connected&&<div className="gmail-header-badge">📧 {gmailState.profile?.emailAddress}</div>}
+          {sheetsConfig.enabled&&<div className="sheets-badge">📊 Sheets</div>}
+        </div>
       </div>
       <ApiKeyBanner apiKey={apiKey} setApiKey={setApiKey}/>
       <nav className="tabs">
@@ -1175,9 +1224,10 @@ export default function App(){
       {tab===1&&<RealLeadFinderTab config={config} apiKey={apiKey} apiKeys={apiKeys} sheetsConfig={sheetsConfig} onLeadsFound={handleLeadsFound}/>}
       {tab===2&&<SocialLeadFinderTab config={config} apiKey={apiKey} onLeadsFound={handleLeadsFound}/>}
       {tab===3&&<WorkflowTab config={config} apiKey={apiKey} sheetsConfig={sheetsConfig} stages={stages} setStages={setStages} logs={logs} setLogs={setLogs} running={running} setRunning={setRunning}/>}
-      {tab===4&&<PipelineTab apiKey={apiKey} config={config} stages={stages} sheetsConfig={sheetsConfig}/>}
-      {tab===5&&<MeetingsTab config={config} stages={stages}/>}
-      {tab===6&&<DataStoreTab sheetsConfig={sheetsConfig} setSheetsConfig={setSheetsConfig} stages={stages} config={config}/>}
+      {tab===4&&<EmailSenderTab config={config} apiKey={apiKey} stages={stages} sheetsConfig={sheetsConfig} gmailState={gmailState} setGmailState={setGmailState}/>}
+      {tab===5&&<PipelineTab apiKey={apiKey} config={config} stages={stages} sheetsConfig={sheetsConfig}/>}
+      {tab===6&&<MeetingsTab config={config} stages={stages}/>}
+      {tab===7&&<DataStoreTab sheetsConfig={sheetsConfig} setSheetsConfig={setSheetsConfig} stages={stages} config={config}/>}
     </main>
   </div>);
 }
