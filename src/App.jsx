@@ -116,8 +116,6 @@ const DEFAULT_SHEETS={apiKey:"",sheetId:"",enabled:false};
 const DEFAULT_API_KEYS={hunter:"",apollo:"",places:""};
 const STAGE_KEYS=["leads","email","followup","proposal","meeting"];
 const STAGE_META=[{key:"leads",icon:"🔍",label:"Lead Research"},{key:"email",icon:"✉️",label:"Outreach Email"},{key:"followup",icon:"🔁",label:"Follow Up"},{key:"proposal",icon:"📄",label:"Proposal"},{key:"meeting",icon:"📅",label:"Meeting"}];
-const PIPELINE_STAGES=["New","Contacted","Replied","Meeting Booked","Proposal Sent","Won","Lost"];
-const PIPELINE_COLORS={New:"#64748b",Contacted:"#3b82f6",Replied:"#f59e0b","Meeting Booked":"#8b5cf6","Proposal Sent":"#ec4899",Won:"#22c55e",Lost:"#ef4444"};
 
 // ── Reusable UI ───────────────────────────────────────────────────────────────
 function SearchableDropdown({label,value,onChange,options,placeholder,renderOption,renderValue,icon}){
@@ -961,29 +959,122 @@ function LeadTable({leads}){
 }
 
 // ── Pipeline Tab ──────────────────────────────────────────────────────────────
+// ── CRM Pipeline Tab (Priority 3) ────────────────────────────────────────────
+const PIPELINE_STAGES=["New","Contacted","Replied","Meeting Booked","Proposal Sent","Won","Lost"];
+const PIPELINE_COLORS={New:"#64748b",Contacted:"#3b82f6",Replied:"#f59e0b","Meeting Booked":"#8b5cf6","Proposal Sent":"#ec4899",Won:"#22c55e",Lost:"#ef4444"};
+const STAGE_ICONS={New:"🆕",Contacted:"✉️",Replied:"💬","Meeting Booked":"📅","Proposal Sent":"📄",Won:"🏆",Lost:"❌"};
+
+function ReminderBadge({reminder}){
+  if(!reminder) return null;
+  const now=new Date();const due=new Date(reminder.date);
+  const diff=Math.ceil((due-now)/(1000*60*60*24));
+  if(diff<0) return <span className="reminder-badge overdue">⚠️ Overdue {Math.abs(diff)}d</span>;
+  if(diff===0) return <span className="reminder-badge today">🔔 Today</span>;
+  if(diff<=2) return <span className="reminder-badge soon">⏰ {diff}d</span>;
+  return <span className="reminder-badge upcoming">📅 {diff}d</span>;
+}
+
+function ActivityLog({activities}){
+  if(!activities?.length) return <div className="activity-empty">No activity yet</div>;
+  return(<div className="activity-list">
+    {[...activities].reverse().map((a,i)=>(
+      <div key={i} className="activity-item">
+        <span className="activity-icon">{a.type==="status"?"🔄":a.type==="note"?"📝":a.type==="email"?"✉️":a.type==="dm"?"💬":a.type==="meeting"?"📅":"📄"}</span>
+        <div className="activity-content">
+          <div className="activity-text">{a.text}</div>
+          <div className="activity-time">{new Date(a.date).toLocaleString()}</div>
+        </div>
+      </div>
+    ))}
+  </div>);
+}
+
+function SetReminderModal({onSave,onClose,existing}){
+  const [date,setDate]=useState(existing?.date||"");
+  const [msg,setMsg]=useState(existing?.message||"Follow up");
+  const presets=[
+    {label:"Tomorrow",days:1},{label:"3 days",days:3},{label:"1 week",days:7},{label:"2 weeks",days:14}
+  ];
+  function setPreset(days){
+    const d=new Date();d.setDate(d.getDate()+days);
+    setDate(d.toISOString().slice(0,10));
+  }
+  return(<div className="modal-overlay" onClick={onClose}>
+    <div className="modal" style={{maxWidth:380}} onClick={e=>e.stopPropagation()}>
+      <div className="modal-header"><h3>🔔 Set Follow-up Reminder</h3><button className="modal-close" onClick={onClose}>✕</button></div>
+      <div className="modal-body">
+        <div className="reminder-presets">{presets.map(p=><button key={p.days} className="preset-btn" onClick={()=>setPreset(p.days)}>{p.label}</button>)}</div>
+        <div className="field" style={{marginTop:12}}><label>📅 Date</label><input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>
+        <div className="field"><label>📝 Reminder Message</label><input type="text" value={msg} onChange={e=>setMsg(e.target.value)} placeholder="Follow up about proposal"/></div>
+        <div style={{display:"flex",gap:8,marginTop:14}}>
+          <button className="btn-primary" onClick={()=>{if(date)onSave({date,message:msg});}}>💾 Save Reminder</button>
+          {existing&&<button className="btn-ghost" onClick={()=>onSave(null)}>🗑 Remove</button>}
+        </div>
+      </div>
+    </div>
+  </div>);
+}
+
 function PipelineTab({apiKey,config,stages,sheetsConfig}){
   const leads=Array.isArray(stages.leads?.result)?stages.leads.result:[];
   const [selected,setSelected]=useState(null);
+  const [view,setView]=useState("list"); // list | kanban
+
+  // Persisted CRM data
   const [status,setStatus]=useState(()=>{try{return JSON.parse(localStorage.getItem("cf_status")||"{}");}catch{return {};}});
   const [notes,setNotes]=useState(()=>{try{return JSON.parse(localStorage.getItem("cf_notes")||"{}");}catch{return {};}});
-  const [content,setContent]=useState({});const [loading,setLoading]=useState({});const [sheetsSaved,setSheetsSaved]=useState({});
+  const [activities,setActivities]=useState(()=>{try{return JSON.parse(localStorage.getItem("cf_activities")||"{}");}catch{return {};}});
+  const [reminders,setReminders]=useState(()=>{try{return JSON.parse(localStorage.getItem("cf_reminders")||"{}");}catch{return {};}});
+  const [lastContacted,setLastContacted]=useState(()=>{try{return JSON.parse(localStorage.getItem("cf_lastcontact")||"{}");}catch{return {};}});
+
   useEffect(()=>{localStorage.setItem("cf_status",JSON.stringify(status));},[status]);
   useEffect(()=>{localStorage.setItem("cf_notes",JSON.stringify(notes));},[notes]);
+  useEffect(()=>{localStorage.setItem("cf_activities",JSON.stringify(activities));},[activities]);
+  useEffect(()=>{localStorage.setItem("cf_reminders",JSON.stringify(reminders));},[reminders]);
+  useEffect(()=>{localStorage.setItem("cf_lastcontact",JSON.stringify(lastContacted));},[lastContacted]);
+
+  // Generate content state
+  const [content,setContent]=useState({});
+  const [loading,setLoading]=useState({});
+  const [sheetsSaved,setSheetsSaved]=useState({});
+  const [showReminder,setShowReminder]=useState(false);
+
+  // Filter / search
+  const [filterStage,setFilterStage]=useState("All");
+  const [search,setSearch]=useState("");
+  const [sortBy,setSortBy]=useState("name"); // name | lastContacted | reminder | status
 
   const leadId=l=>l.email||l.name;
+
+  function addActivity(lid,type,text){
+    setActivities(a=>({...a,[lid]:[...(a[lid]||[]),{type,text,date:new Date().toISOString()}]}));
+  }
+
+  function updateStatus(lid,newStatus){
+    setStatus(s=>({...s,[lid]:newStatus}));
+    addActivity(lid,"status",`Status → ${newStatus}`);
+    if(newStatus==="Contacted"||newStatus==="Replied"||newStatus==="Meeting Booked"){
+      setLastContacted(lc=>({...lc,[lid]:new Date().toISOString()}));
+    }
+  }
+
   async function generate(lead,type){
     if(!apiKey){alert("API key required");return;}
-    const key=`${leadId(lead)}-${type}`;setLoading(l=>({...l,[key]:true}));
+    const lid=leadId(lead);
+    const key=`${lid}-${type}`;setLoading(l=>({...l,[key]:true}));
     try{
       const ph=lead.platform&&lead.platform!=="Direct"?`Lead from ${lead.platform}.`:"";
       let prompt="";
       if(type==="email") prompt=`Cold email to ${lead.contact} at ${lead.name} about ${config.service}. Pain: ${lead.pain_point}. Price: ${config.price}. Sender: ${config.yourName||"us"} / ${config.companyName||config.service}. Subject + body. 120 words max. ${ph}`;
       else if(type==="dm") prompt=`${lead.platform||"Social"} DM to ${lead.contact} at ${lead.name}. Pain: ${lead.pain_point}. 100 words, value-first, no pitch. ${lead.best_approach?`Opening: ${lead.best_approach}`:""}`;
-      else if(type==="proposal") prompt=`Proposal for ${lead.name} (${lead.contact}) for ${config.service}. Pain: ${lead.pain_point}. Investment: ${config.price}. Agency: ${config.companyName||config.service}.`;
-      else if(type==="meeting") prompt=`Meeting request to ${lead.contact} at ${lead.name} for 30-min about ${config.service}. ${config.calendlyLink?`Link: ${config.calendlyLink}`:"Ask availability."} Sender: ${config.yourName||"us"}.`;
+      else if(type==="proposal") prompt=`Full proposal for ${lead.name} (${lead.contact}) for ${config.service}. Pain: ${lead.pain_point}. Investment: ${config.price}. Agency: ${config.companyName||config.service}. Include sections: Summary, Problem, Solution, Deliverables, Timeline, Investment, Next Steps.`;
+      else if(type==="meeting") prompt=`Meeting request to ${lead.contact} at ${lead.name} for 30-min about ${config.service}. ${config.calendlyLink?`Booking link: ${config.calendlyLink}`:"Ask for availability."} Sender: ${config.yourName||"us"}.`;
       const text=await callClaude(apiKey,"You are a professional B2B sales expert.",prompt);
       setContent(c=>({...c,[key]:text}));
-      setStatus(s=>({...s,[leadId(lead)]:type==="email"||type==="dm"?"Contacted":s[leadId(lead)]||"New"}));
+      const newStatus=type==="email"||type==="dm"?"Contacted":type==="meeting"?"Meeting Booked":type==="proposal"?"Proposal Sent":status[lid]||"New";
+      updateStatus(lid,newStatus);
+      addActivity(lid,type,`Generated ${type==="email"?"cold email":type==="dm"?"social DM":type==="proposal"?"proposal":"meeting request"}`);
+      setLastContacted(lc=>({...lc,[lid]:new Date().toISOString()}));
       if(sheetsConfig.enabled&&sheetsConfig.apiKey&&sheetsConfig.sheetId){
         try{await exportAction(sheetsConfig,lead,type,text,config);setSheetsSaved(s=>({...s,[key]:true}));}catch(e){console.warn(e);}
       }
@@ -991,92 +1082,250 @@ function PipelineTab({apiKey,config,stages,sheetsConfig}){
     setLoading(l=>({...l,[key]:false}));
   }
 
-  const grouped=PIPELINE_STAGES.reduce((acc,s)=>{acc[s]=leads.filter(l=>(status[leadId(l)]||"New")===s);return acc;},{});
-  const wonCount=grouped["Won"]?.length||0;
-  const contactedCount=leads.filter(l=>status[leadId(l)]&&status[leadId(l)]!=="New").length;
+  function saveNote(lid,val){
+    setNotes(n=>({...n,[lid]:val}));
+    addActivity(lid,"note","Note updated");
+  }
 
-  if(leads.length===0) return(<div className="empty-state"><div className="empty-icon">👥</div><p>Import leads in <strong>📥 Real Leads</strong> then run <strong>🚀 Workflow</strong>.</p></div>);
+  // Filter + sort leads
+  const filteredLeads=leads.filter(l=>{
+    const lid=leadId(l);
+    const st=status[lid]||"New";
+    const matchStage=filterStage==="All"||st===filterStage;
+    const matchSearch=!search||(l.name+l.contact+(l.email||"")).toLowerCase().includes(search.toLowerCase());
+    return matchStage&&matchSearch;
+  }).sort((a,b)=>{
+    const la=leadId(a),lb=leadId(b);
+    if(sortBy==="lastContacted"){
+      const da=lastContacted[la]?new Date(lastContacted[la]):new Date(0);
+      const db=lastContacted[lb]?new Date(lastContacted[lb]):new Date(0);
+      return db-da;
+    }
+    if(sortBy==="reminder"){
+      const ra=reminders[la]?.date||"9999";const rb=reminders[lb]?.date||"9999";
+      return ra<rb?-1:ra>rb?1:0;
+    }
+    if(sortBy==="status") return PIPELINE_STAGES.indexOf(status[la]||"New")-PIPELINE_STAGES.indexOf(status[lb]||"New");
+    return a.name.localeCompare(b.name);
+  });
+
+  // Overdue reminders count
+  const overdueCount=leads.filter(l=>{
+    const r=reminders[leadId(l)];
+    return r&&new Date(r.date)<new Date();
+  }).length;
+
+  const grouped=PIPELINE_STAGES.reduce((acc,s)=>{acc[s]=leads.filter(l=>(status[leadId(l)]||"New")===s);return acc;},{});
+
+  if(leads.length===0) return(
+    <div className="empty-state"><div className="empty-icon">👥</div>
+      <p>No leads yet. Go to <strong>📥 Real Leads</strong> to import real contacts, then run <strong>🚀 Workflow</strong>.</p>
+    </div>);
 
   return(<div className="pipeline-wrap">
+    {/* Reminder modal */}
+    {showReminder&&selected!==null&&<SetReminderModal
+      existing={reminders[leadId(leads[selected])]}
+      onClose={()=>setShowReminder(false)}
+      onSave={(r)=>{
+        const lid=leadId(leads[selected]);
+        setReminders(rm=>({...rm,[lid]:r}));
+        if(r) addActivity(lid,"reminder",`Reminder set for ${new Date(r.date).toLocaleDateString()}: ${r.message}`);
+        else addActivity(lid,"reminder","Reminder removed");
+        setShowReminder(false);
+      }}
+    />}
+
+    {/* Header */}
     <div className="pipeline-header">
-      <h2>👥 Sales Pipeline</h2><p className="sub">Track every lead from first contact to closed deal</p>
-      <div className="pipeline-stats">
-        <span className="pstat"><strong>{leads.length}</strong> total</span>
-        <span className="pstat blue"><strong>{contactedCount}</strong> contacted</span>
-        <span className="pstat green"><strong>{wonCount}</strong> won 🎉</span>
-      </div>
-    </div>
-    <div className="kanban-strip">
-      {PIPELINE_STAGES.map(s=>(
-        <div key={s} className="kanban-col" style={{borderTopColor:PIPELINE_COLORS[s]}}>
-          <div className="kanban-col-title" style={{color:PIPELINE_COLORS[s]}}>{s}</div>
-          <div className="kanban-count">{grouped[s]?.length||0}</div>
+      <div>
+        <h2>👥 CRM Pipeline</h2>
+        <p className="sub">Track every lead from first contact to closed deal</p>
+        <div className="pipeline-stats">
+          <span className="pstat"><strong>{leads.length}</strong> total</span>
+          <span className="pstat blue"><strong>{leads.filter(l=>status[leadId(l)]&&status[leadId(l)]!=="New").length}</strong> contacted</span>
+          <span className="pstat green"><strong>{grouped["Won"]?.length||0}</strong> won 🏆</span>
+          {overdueCount>0&&<span className="pstat red"><strong>{overdueCount}</strong> overdue ⚠️</span>}
         </div>
-      ))}
-    </div>
-    <div className="leads-tab">
-      <div className="leads-list">
-        {leads.map((lead,i)=>{const st=status[leadId(lead)]||"New";return(
-          <div key={i} className={`lead-row ${selected===i?"active":""}`} onClick={()=>setSelected(i)}>
-            <div className="lead-row-main"><strong>{lead.name}</strong>{lead.verified&&<span style={{fontSize:10,color:"#22c55e"}}>✅</span>}</div>
-            <div style={{display:"flex",gap:6,alignItems:"center",marginTop:3}}>
-              <span className="lead-row-sub">{lead.contact}</span>
-              <span style={{background:PIPELINE_COLORS[st],fontSize:10,padding:"1px 6px",borderRadius:4,color:"#fff",fontWeight:700}}>{st}</span>
-            </div>
-          </div>);})}
       </div>
-      {selected!==null&&(()=>{
-        const lead=leads[selected];const lid=leadId(lead);const st=status[lid]||"New";
-        return(<div className="lead-detail-panel">
-          <div className="lead-detail-header"><h3>{lead.name}</h3>
-            <div className="lead-tags"><span className="tag">{lead.size}</span>{lead.verified&&<span className="tag tag-green">✅ Verified</span>}</div>
+      <div className="pipeline-view-toggle">
+        <button className={`view-btn ${view==="list"?"active":""}`} onClick={()=>setView("list")}>☰ List</button>
+        <button className={`view-btn ${view==="kanban"?"active":""}`} onClick={()=>setView("kanban")}>⬜ Kanban</button>
+      </div>
+    </div>
+
+    {/* Kanban view */}
+    {view==="kanban"&&(
+      <div className="kanban-board">
+        {PIPELINE_STAGES.map(s=>(
+          <div key={s} className="kanban-column" style={{borderTopColor:PIPELINE_COLORS[s]}}>
+            <div className="kanban-col-header">
+              <span className="kanban-col-title" style={{color:PIPELINE_COLORS[s]}}>{STAGE_ICONS[s]} {s}</span>
+              <span className="kanban-col-count">{grouped[s]?.length||0}</span>
+            </div>
+            <div className="kanban-cards">
+              {(grouped[s]||[]).map((lead,i)=>{
+                const lid=leadId(lead);
+                return(<div key={i} className="kanban-card" onClick={()=>{setView("list");setSelected(leads.indexOf(lead));}}>
+                  <div className="kanban-card-name">{lead.name}</div>
+                  <div className="kanban-card-contact">{lead.contact}</div>
+                  {lastContacted[lid]&&<div className="kanban-card-date">Last: {new Date(lastContacted[lid]).toLocaleDateString()}</div>}
+                  <ReminderBadge reminder={reminders[lid]}/>
+                </div>);
+              })}
+              {(grouped[s]||[]).length===0&&<div className="kanban-empty">No leads</div>}
+            </div>
           </div>
-          <div className="status-changer">
-            <label style={{fontSize:12,fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>Pipeline Stage</label>
-            <div className="status-options">
-              {PIPELINE_STAGES.map(s=>(
-                <button key={s} className={`status-btn ${st===s?"active":""}`}
-                  style={st===s?{background:PIPELINE_COLORS[s],color:"#fff",borderColor:PIPELINE_COLORS[s]}:{}}
-                  onClick={()=>setStatus(v=>({...v,[lid]:s}))}>
-                  {s}
-                </button>
+        ))}
+      </div>
+    )}
+
+    {/* List view */}
+    {view==="list"&&(<>
+      {/* Toolbar */}
+      <div className="pipeline-toolbar">
+        <input className="pipeline-search" placeholder="🔍 Search leads…" value={search} onChange={e=>setSearch(e.target.value)}/>
+        <div className="pipeline-filters">
+          <select className="pipeline-filter" value={filterStage} onChange={e=>setFilterStage(e.target.value)}>
+            <option value="All">All Stages</option>
+            {PIPELINE_STAGES.map(s=><option key={s} value={s}>{STAGE_ICONS[s]} {s} ({grouped[s]?.length||0})</option>)}
+          </select>
+          <select className="pipeline-filter" value={sortBy} onChange={e=>setSortBy(e.target.value)}>
+            <option value="name">Sort: Name</option>
+            <option value="status">Sort: Stage</option>
+            <option value="lastContacted">Sort: Last Contacted</option>
+            <option value="reminder">Sort: Reminder</option>
+          </select>
+        </div>
+        {filteredLeads.length!==leads.length&&<span className="filter-count">{filteredLeads.length} of {leads.length}</span>}
+      </div>
+
+      <div className="leads-tab">
+        {/* Lead list */}
+        <div className="leads-list">
+          {filteredLeads.map((lead,i)=>{
+            const lid=leadId(lead);const st=status[lid]||"New";
+            const origIdx=leads.indexOf(lead);
+            const lc=lastContacted[lid];
+            const r=reminders[lid];
+            return(<div key={i} className={`lead-row ${selected===origIdx?"active":""}`} onClick={()=>setSelected(origIdx)}>
+              <div className="lead-row-main">
+                <strong>{lead.name}</strong>
+                <div style={{display:"flex",gap:4}}>{lead.verified&&<span style={{fontSize:10,color:"#22c55e"}}>✅</span>}<ReminderBadge reminder={r}/></div>
+              </div>
+              <div style={{display:"flex",gap:6,alignItems:"center",marginTop:3,flexWrap:"wrap"}}>
+                <span className="lead-row-sub">{lead.contact}</span>
+                <span style={{background:PIPELINE_COLORS[st],fontSize:10,padding:"1px 6px",borderRadius:4,color:"#fff",fontWeight:700}}>{st}</span>
+              </div>
+              {lc&&<div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>Last contacted: {new Date(lc).toLocaleDateString()}</div>}
+            </div>);
+          })}
+        </div>
+
+        {/* Detail panel */}
+        {selected!==null&&leads[selected]&&(()=>{
+          const lead=leads[selected];const lid=leadId(lead);const st=status[lid]||"New";
+          const lc=lastContacted[lid];const r=reminders[lid];
+          const [activeTab,setActiveTab]=useState("actions");
+          return(<div className="lead-detail-panel">
+            {/* Lead header */}
+            <div className="lead-detail-header">
+              <div>
+                <h3>{lead.name}</h3>
+                <div style={{fontSize:13,color:"#64748b",marginTop:2}}>{lead.contact}{lead.title?` · ${lead.title}`:""}</div>
+              </div>
+              <div className="lead-tags">
+                <span className="tag">{lead.size}</span>
+                {lead.verified&&<span className="tag tag-green">✅ Verified</span>}
+                {lead.platform&&lead.platform!=="Direct"&&<span className="tag tag-platform">{lead.platform}</span>}
+              </div>
+            </div>
+
+            {/* Contact info */}
+            <div className="lead-info-grid">
+              <div>📧 <a href={`mailto:${lead.email}`}>{lead.email||"No email"}</a></div>
+              {lead.website&&<div>🌐 <a href={lead.website} target="_blank" rel="noreferrer">{lead.website}</a></div>}
+              {lead.phone&&<div>📞 {lead.phone}</div>}
+              {lead.linkedin&&<div>💼 <a href={lead.linkedin} target="_blank" rel="noreferrer">LinkedIn</a></div>}
+              <div style={{gridColumn:"1/-1"}}>💡 {lead.pain_point}</div>
+              {lc&&<div style={{gridColumn:"1/-1",fontSize:12,color:"#64748b"}}>📆 Last contacted: <strong>{new Date(lc).toLocaleString()}</strong></div>}
+            </div>
+
+            {/* Status + Reminder row */}
+            <div className="status-reminder-row">
+              <div className="status-changer" style={{flex:1}}>
+                <label style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:".5px"}}>Pipeline Stage</label>
+                <div className="status-options">
+                  {PIPELINE_STAGES.map(s=>(
+                    <button key={s} className={`status-btn ${st===s?"active":""}`}
+                      style={st===s?{background:PIPELINE_COLORS[s],color:"#fff",borderColor:PIPELINE_COLORS[s]}:{}}
+                      onClick={()=>updateStatus(lid,s)}>
+                      {STAGE_ICONS[s]} {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="reminder-section">
+                <label style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:".5px"}}>Follow-up Reminder</label>
+                <div style={{marginTop:6}}>
+                  {r?(<div className="reminder-active">
+                    <ReminderBadge reminder={r}/>
+                    <span className="reminder-msg">{r.message}</span>
+                    <span className="reminder-date">{new Date(r.date).toLocaleDateString()}</span>
+                    <button className="btn-ghost" style={{fontSize:11,padding:"2px 8px"}} onClick={()=>setShowReminder(true)}>✏️</button>
+                  </div>):(
+                    <button className="btn-secondary" style={{fontSize:12}} onClick={()=>setShowReminder(true)}>🔔 Set Reminder</button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Inner tabs: Actions / Notes / Activity */}
+            <div className="detail-tabs">
+              {[["actions","⚡ Actions"],["notes","📝 Notes"],["activity","📋 Activity"]].map(([t,l])=>(
+                <button key={t} className={`detail-tab ${activeTab===t?"active":""}`} onClick={()=>setActiveTab(t)}>{l}</button>
               ))}
             </div>
-          </div>
-          <div className="lead-info-grid">
-            <div>👤 {lead.contact}{lead.title?` · ${lead.title}`:""}</div>
-            <div>📧 <a href={`mailto:${lead.email}`}>{lead.email||"No email"}</a></div>
-            {lead.website&&<div>🌐 <a href={lead.website} target="_blank" rel="noreferrer">{lead.website}</a></div>}
-            {lead.phone&&<div>📞 {lead.phone}</div>}
-            <div>💡 {lead.pain_point}</div>
-          </div>
-          <div className="field" style={{marginBottom:14}}>
-            <label>📝 Notes</label>
-            <textarea className="notes-area" placeholder="Add notes…" value={notes[lid]||""} onChange={e=>setNotes(n=>({...n,[lid]:e.target.value}))} rows={3}/>
-          </div>
-          <div className="lead-actions">
-            {[["email","✉️","Cold Email"],["dm","💬","Social DM"],["proposal","📄","Proposal"],["meeting","📅","Meeting"]].map(([type,icon,label])=>{
-              const key=`${lid}-${type}`;
-              return(<div key={type} className="lead-action-block">
-                <div className="lead-action-header">
-                  <button className="btn-secondary" disabled={loading[key]} onClick={()=>generate(lead,type)}>{loading[key]?"⏳ Generating…":`${icon} ${label}`}</button>
-                  {sheetsSaved[key]&&<span className="sheets-saved-badge">📊 Saved</span>}
-                </div>
-                {content[key]&&<div className="generated-content">
-                  <pre>{content[key]}</pre>
-                  <div className="generated-actions">
-                    <button className="btn-ghost copy-btn" onClick={()=>navigator.clipboard.writeText(content[key])}>📋 Copy</button>
-                    {type==="meeting"&&<a className="btn-primary gcal-btn"
-                      href={buildCalendarLink({title:`Discovery – ${config.companyName||config.service} × ${lead.name}`,description:content[key],startISO:(()=>{const d=new Date();d.setDate(d.getDate()+7);d.setHours(10,0,0,0);return d.toISOString();})(),durationMins:30,location:config.calendlyLink||"Google Meet"})}
-                      target="_blank" rel="noreferrer">📅 Add to Calendar</a>}
+
+            {/* Actions tab */}
+            {activeTab==="actions"&&<div className="lead-actions">
+              {[["email","✉️","Cold Email"],["dm","💬","Social DM"],["proposal","📄","Proposal"],["meeting","📅","Meeting"]].map(([type,icon,label])=>{
+                const key=`${lid}-${type}`;
+                return(<div key={type} className="lead-action-block">
+                  <div className="lead-action-header">
+                    <button className="btn-secondary" disabled={loading[key]} onClick={()=>generate(lead,type)}>
+                      {loading[key]?`⏳ Generating…`:`${icon} ${label}`}
+                    </button>
+                    {sheetsSaved[key]&&<span className="sheets-saved-badge">📊 Saved</span>}
                   </div>
-                </div>}
-              </div>);
-            })}
-          </div>
-        </div>);
-      })()}
-    </div>
+                  {content[key]&&<div className="generated-content">
+                    <pre>{content[key]}</pre>
+                    <div className="generated-actions">
+                      <button className="btn-ghost copy-btn" onClick={()=>navigator.clipboard.writeText(content[key])}>📋 Copy</button>
+                      {type==="meeting"&&<a className="btn-primary gcal-btn"
+                        href={buildCalendarLink({title:`Discovery – ${config.companyName||config.service} × ${lead.name}`,description:content[key],startISO:(()=>{const d=new Date();d.setDate(d.getDate()+7);d.setHours(10,0,0,0);return d.toISOString();})(),durationMins:30,location:config.calendlyLink||"Google Meet"})}
+                        target="_blank" rel="noreferrer">📅 Add to Calendar</a>}
+                    </div>
+                  </div>}
+                </div>);
+              })}
+            </div>}
+
+            {/* Notes tab */}
+            {activeTab==="notes"&&<div style={{padding:"4px 0"}}>
+              <textarea className="notes-area" style={{minHeight:160}} placeholder="Add notes about this lead — call summary, what they said, next steps…"
+                value={notes[lid]||""} onChange={e=>saveNote(lid,e.target.value)} rows={6}/>
+              <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>Notes saved automatically</div>
+            </div>}
+
+            {/* Activity tab */}
+            {activeTab==="activity"&&<div style={{padding:"4px 0"}}>
+              <ActivityLog activities={activities[lid]}/>
+            </div>}
+          </div>);
+        })()}
+      </div>
+    </>)}
   </div>);
 }
 
@@ -1231,3 +1480,4 @@ export default function App(){
     </main>
   </div>);
 }
+
