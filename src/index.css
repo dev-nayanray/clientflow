@@ -828,3 +828,78 @@ a { color: inherit; }
   .send-steps { gap:4px; }
   .send-arrow { display:none; }
 }
+
+/* ── CRM Pipeline Enhancements (Priority 3) ──────────────────────────────── */
+
+/* Header + view toggle */
+.pipeline-view-toggle { display:flex;gap:4px; }
+.view-btn { background:#f1f5f9;border:1.5px solid #e2e8f0;border-radius:8px;padding:7px 16px;font-size:13px;font-weight:600;cursor:pointer;color:#64748b;transition:all .2s; }
+.view-btn.active { background:#1e293b;color:#fff;border-color:#1e293b; }
+.pstat.red strong { color:#ef4444; }
+
+/* Toolbar */
+.pipeline-toolbar { display:flex;gap:10px;align-items:center;flex-wrap:wrap; }
+.pipeline-search { flex:1;min-width:180px;border:1.5px solid #e2e8f0;border-radius:8px;padding:8px 12px;font-size:14px;color:#1e293b; }
+.pipeline-search:focus { outline:none;border-color:#3b82f6; }
+.pipeline-filters { display:flex;gap:8px; }
+.pipeline-filter { border:1.5px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:13px;color:#374151;background:#fff;cursor:pointer; }
+.pipeline-filter:focus { outline:none;border-color:#3b82f6; }
+.filter-count { font-size:12px;color:#94a3b8;font-weight:600;white-space:nowrap; }
+
+/* Kanban board */
+.kanban-board { display:grid;grid-template-columns:repeat(7,1fr);gap:10px;overflow-x:auto; }
+.kanban-column { background:#f8fafc;border-radius:12px;border-top:3px solid;min-width:140px;overflow:hidden; }
+.kanban-col-header { display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #e2e8f0; }
+.kanban-col-title { font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px; }
+.kanban-col-count { font-size:14px;font-weight:800;color:#1e293b; }
+.kanban-cards { padding:8px;display:flex;flex-direction:column;gap:6px;min-height:80px; }
+.kanban-card { background:#fff;border:1.5px solid #e2e8f0;border-radius:8px;padding:10px;cursor:pointer;transition:all .15s; }
+.kanban-card:hover { border-color:#3b82f6;box-shadow:0 2px 8px rgba(59,130,246,.15); }
+.kanban-card-name { font-size:12px;font-weight:700;color:#1e293b;margin-bottom:3px; }
+.kanban-card-contact { font-size:11px;color:#64748b;margin-bottom:4px; }
+.kanban-card-date { font-size:10px;color:#94a3b8; }
+.kanban-empty { font-size:11px;color:#cbd5e1;text-align:center;padding:12px 0; }
+
+/* Reminder badges */
+.reminder-badge { display:inline-flex;align-items:center;border-radius:5px;padding:1px 6px;font-size:10px;font-weight:700;white-space:nowrap; }
+.reminder-badge.overdue { background:#fef2f2;color:#dc2626;border:1px solid #fecaca; }
+.reminder-badge.today { background:#fff7ed;color:#d97706;border:1px solid #fed7aa; }
+.reminder-badge.soon { background:#fff7ed;color:#f59e0b;border:1px solid #fde68a; }
+.reminder-badge.upcoming { background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0; }
+
+/* Reminder modal */
+.reminder-presets { display:flex;gap:6px;flex-wrap:wrap; }
+.preset-btn { background:#f1f5f9;border:1.5px solid #e2e8f0;border-radius:7px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;color:#475569;transition:all .2s; }
+.preset-btn:hover { background:#eff6ff;border-color:#3b82f6;color:#1d4ed8; }
+
+/* Status + reminder row */
+.status-reminder-row { display:flex;gap:16px;margin:12px 0;flex-wrap:wrap; }
+.reminder-section { min-width:200px; }
+.reminder-active { display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px; }
+.reminder-msg { font-size:12px;font-weight:600;color:#374151; }
+.reminder-date { font-size:11px;color:#94a3b8; }
+
+/* Detail inner tabs */
+.detail-tabs { display:flex;gap:4px;border-bottom:2px solid #f1f5f9;margin:14px 0 12px; }
+.detail-tab { background:none;border:none;border-bottom:2px solid transparent;padding:8px 14px;font-size:13px;font-weight:600;color:#94a3b8;cursor:pointer;margin-bottom:-2px;transition:all .15s; }
+.detail-tab:hover { color:#64748b; }
+.detail-tab.active { color:#1d4ed8;border-bottom-color:#3b82f6; }
+
+/* Activity log */
+.activity-list { display:flex;flex-direction:column;gap:8px;max-height:300px;overflow-y:auto; }
+.activity-item { display:flex;gap:10px;align-items:flex-start; }
+.activity-icon { font-size:16px;width:24px;text-align:center;flex-shrink:0;margin-top:1px; }
+.activity-content { flex:1; }
+.activity-text { font-size:13px;color:#374151;line-height:1.4; }
+.activity-time { font-size:11px;color:#94a3b8;margin-top:2px; }
+.activity-empty { font-size:13px;color:#94a3b8;text-align:center;padding:24px 0; }
+
+@media(max-width:900px){
+  .kanban-board { grid-template-columns:repeat(3,1fr); }
+  .status-reminder-row { flex-direction:column; }
+}
+@media(max-width:600px){
+  .kanban-board { grid-template-columns:repeat(2,1fr); }
+  .pipeline-toolbar { flex-direction:column; }
+  .pipeline-search { width:100%; }
+}
