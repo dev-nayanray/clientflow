@@ -110,7 +110,7 @@ async function logSentEmail(sc,{to,subject,lead,cfg}){
 }
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
-const TABS=["⚙️ Setup","📥 Real Leads","🔍 Social","🚀 Workflow","📧 Send Emails","👥 Pipeline","📅 Meetings","📁 Portfolio","📊 Data Store"];
+const TABS=["⚙️ Setup","📥 Real Leads","🔍 Social","🚀 Workflow","📧 Send Emails","👥 Pipeline","📅 Meetings","📁 Portfolio","🎯 Freelance","📊 Data Store"];
 const DEFAULT_CONFIG={niche:"E-commerce Stores",service:"Web Design & Development",country:"United States",price:"$500 – $2,000",calendlyLink:"",yourName:"",yourEmail:"",companyName:"",googleClientId:""};
 const DEFAULT_SHEETS={apiKey:"",sheetId:"",enabled:false};
 const DEFAULT_API_KEYS={hunter:"",apollo:"",places:""};
@@ -1663,6 +1663,442 @@ Template style: ${tmpl?.label}`;
   );
 }
 
+// ── Upwork / Fiverr Proposal Generator (Priority 5) ──────────────────────────
+const PLATFORMS_FL = [
+  { key:"upwork",  name:"Upwork",  icon:"🟢", color:"#14a800", bg:"#f0fdf4",
+    tips:["Match keywords from the job post exactly","Show relevant past result in first 2 lines","Ask a smart question to show you read the post","Keep under 200 words for best response rate","Bid 10–15% below average to get early traction"],
+    structure:"Hook (result) → Specific understanding of their problem → Your approach (3 steps) → Relevant experience/result → Question + CTA",
+  },
+  { key:"fiverr",  name:"Fiverr",  icon:"🟢", color:"#1dbf73", bg:"#f0fdf4",
+    tips:["Optimize gig title with buyer search terms","First 80 chars of description appear in search","Use all 3 gig packages (Basic/Standard/Premium)","Respond within 1 hour to boost ranking","5 portfolio images get 3× more orders"],
+    structure:"Gig Title → SEO Description → 3 Packages → FAQs → Tags",
+  },
+  { key:"freelancer", name:"Freelancer", icon:"🔵", color:"#0d6efd", bg:"#eff6ff",
+    tips:["Contest entries get high visibility","Seal the deal fast — first 5 bids win 70% of jobs","Use milestone billing to reduce risk","Mention your timezone for time-sensitive clients","Post in relevant Freelancer community groups"],
+    structure:"Greeting → Understand the project → Your solution → Timeline + price → Portfolio link + CTA",
+  },
+  { key:"peopleperhour", name:"PeoplePerHour", icon:"🟠", color:"#ff7043", bg:"#fff7f4",
+    tips:["Hourlies (fixed packages) get steady passive income","Verified profile gets 2× more clicks","Add a video intro to your profile","Respond to Stream posts quickly — first wins","UK/EU clients pay premium rates"],
+    structure:"Personal greeting → Project understanding → Deliverables → Timeline → Price + CTA",
+  },
+];
+
+const JOB_CATEGORIES = [
+  "Web Design & Development","Mobile App Development","WordPress / Shopify",
+  "SEO & Content Marketing","Social Media Management","Graphic Design / Branding",
+  "Video Editing","Copywriting","Virtual Assistant","Data Entry",
+  "Email Marketing","Lead Generation","CRM / Automation","React / Vue / Angular",
+  "Python / Django","Node.js / Express","UI/UX Design","Logo Design",
+  "Business Analyst","Project Management",
+];
+
+function FreelanceTab({ apiKey, config }) {
+  const [platform, setPlatform] = useState("upwork");
+  const [mode, setMode] = useState("proposal"); // proposal | gig | optimize | tracker
+  
+  // Proposal fields
+  const [jobPost, setJobPost] = useState("");
+  const [bidAmount, setBidAmount] = useState("");
+  const [deliveryDays, setDeliveryDays] = useState("");
+  const [yourExperience, setYourExperience] = useState("");
+
+  // Gig fields
+  const [gigCategory, setGigCategory] = useState("Web Design & Development");
+  const [gigKeywords, setGigKeywords] = useState("");
+  const [gigPriceBasic, setGigPriceBasic] = useState("$50");
+  const [gigPriceStandard, setGigPriceStandard] = useState("$150");
+  const [gigPricePremium, setGigPricePremium] = useState("$350");
+
+  // Optimize fields
+  const [existingProfile, setExistingProfile] = useState("");
+
+  // Output
+  const [output, setOutput] = useState(null);
+  const [generating, setGenerating] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [activeOut, setActiveOut] = useState(0);
+
+  // Saved proposals
+  const [saved, setSaved] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("cf_fl_saved") || "[]"); } catch { return []; }
+  });
+  useEffect(() => { localStorage.setItem("cf_fl_saved", JSON.stringify(saved)); }, [saved]);
+
+  const pl = PLATFORMS_FL.find(p => p.key === platform);
+
+  async function generate() {
+    if (!apiKey) { alert("Anthropic API key required."); return; }
+    setGenerating(true); setOutput(null);
+
+    try {
+      if (mode === "proposal") {
+        if (!jobPost.trim()) { alert("Paste the job post first."); setGenerating(false); return; }
+
+        const ctx = `
+Platform: ${pl.name}
+Job Post: ${jobPost}
+Your Service: ${config.service || "Web Development"}
+Your Name: ${config.yourName || "Freelancer"}
+Agency/Profile: ${config.companyName || ""}
+Bid Amount: ${bidAmount || "to be discussed"}
+Delivery: ${deliveryDays || "to be discussed"} days
+Your Experience: ${yourExperience || "3+ years, multiple successful projects"}
+Country: ${config.country}
+Proposal structure to follow: ${pl.structure}`;
+
+        const [proposal, coverLetter, questions] = await Promise.all([
+          callClaude(apiKey,
+            `You are an expert ${pl.name} freelancer with 100+ successful proposals. You write proposals that win. Return ONLY the proposal text, no meta-commentary.`,
+            `Write a winning ${pl.name} proposal for this job.\n${ctx}\n\nRules:\n- Start with a HOOK that references their specific problem (not "Hi, I'm...")\n- Show you understand their exact need\n- Describe your approach in 2–3 concrete steps\n- Include ONE specific relevant result or number as proof\n- End with ONE smart question that shows expertise\n- Keep it under 200 words\n- Do NOT use clichés like "I am perfect for this job" or "I have extensive experience"`
+          ),
+          callClaude(apiKey,
+            `You are an expert at writing ${pl.name} cover letters that get shortlisted. Return ONLY the cover letter text.`,
+            `Write an alternative, shorter cover letter (100 words max) for the same job.\n${ctx}\n\nThis should be punchier and more direct than a standard proposal. Lead with the result you'll deliver, not who you are.`
+          ),
+          callClaude(apiKey,
+            "You are a senior freelancer who knows exactly what to ask clients to qualify them and show expertise.",
+            `Based on this job post, generate 5 smart clarifying questions to ask the client.\n\nJob Post: ${jobPost}\nService: ${config.service}\n\nQuestions should:\n- Show you've read the post carefully\n- Help qualify if it's a good fit\n- Demonstrate expertise\n- Be concise (1 sentence each)\n\nFormat as a numbered list.`
+          ),
+        ]);
+
+        setOutput([
+          { label: "🎯 Main Proposal", content: proposal },
+          { label: "⚡ Short Cover Letter", content: coverLetter },
+          { label: "❓ Clarifying Questions", content: questions },
+        ]);
+
+        // Auto-save
+        setSaved(s => [{
+          id: Date.now(), platform, mode: "proposal",
+          title: jobPost.substring(0, 60) + "…",
+          content: proposal, savedAt: new Date().toISOString()
+        }, ...s.slice(0, 19)]);
+
+      } else if (mode === "gig") {
+        const ctx = `
+Platform: ${pl.name}
+Category: ${gigCategory}
+Service: ${config.service}
+Keywords: ${gigKeywords || config.service}
+Agency: ${config.companyName || config.yourName || "Freelancer"}
+Pricing: Basic ${gigPriceBasic} / Standard ${gigPriceStandard} / Premium ${gigPricePremium}
+Target clients: ${config.niche} in ${config.country}`;
+
+        const [gigTitle, gigDesc, packages, faqs, tags] = await Promise.all([
+          callClaude(apiKey,
+            `You are a ${pl.name} SEO expert. Write titles that rank on the first page.`,
+            `Write 5 optimized ${pl.name} gig titles for:\n${ctx}\n\nRules:\n- Under 80 characters each\n- Include high-volume buyer keywords\n- Be specific about the result, not just the service\n- Avoid clickbait\n\nReturn as a numbered list.`
+          ),
+          callClaude(apiKey,
+            `You are a ${pl.name} gig copywriter. Write descriptions that convert browsers into buyers.`,
+            `Write a complete ${pl.name} gig description for:\n${ctx}\n\nStructure:\n- Opening hook (result-focused, 2 lines)\n- Why choose me (3 bullet points with ✓)\n- What's included (service breakdown)\n- My process (numbered steps)\n- Who this is for\n- Call to action\n\nSEO: naturally include these keywords: ${gigKeywords || config.service}\nLength: 250–350 words`
+          ),
+          callClaude(apiKey,
+            "You are a Fiverr/Upwork pricing expert who maximises seller revenue.",
+            `Create 3 service packages for this gig:\n${ctx}\n\nFor each package provide:\n- Package name (Basic/Standard/Premium)\n- Price (use the given prices)\n- What's included (bullet points)\n- Delivery time\n- Number of revisions\n\nMake Basic a clear entry point, Standard the best value, Premium the full solution.`
+          ),
+          callClaude(apiKey,
+            "You write FAQ sections that address buyer objections and close sales.",
+            `Write 5 FAQ questions and answers for this ${pl.name} gig:\n${ctx}\n\nFAQs should address: timeline, revisions, communication, what you need from the buyer, money-back/guarantee.\nFormat as Q: / A: pairs.`
+          ),
+          callClaude(apiKey,
+            `You are a ${pl.name} SEO expert who knows exactly which tags drive traffic.`,
+            `Generate the best 5 search tags/keywords for this ${pl.name} gig:\n${ctx}\n\nReturn ONLY a comma-separated list of 5 tags, each 2–4 words, no explanation.`
+          ),
+        ]);
+
+        setOutput([
+          { label: "📌 Gig Titles (5 options)", content: gigTitle },
+          { label: "📝 Gig Description", content: gigDesc },
+          { label: "💰 Packages", content: packages },
+          { label: "❓ FAQs", content: faqs },
+          { label: "🏷️ Tags / Keywords", content: tags },
+        ]);
+
+        setSaved(s => [{
+          id: Date.now(), platform, mode: "gig",
+          title: `${pl.name} Gig — ${gigCategory}`,
+          content: gigDesc, savedAt: new Date().toISOString()
+        }, ...s.slice(0, 19)]);
+
+      } else if (mode === "optimize") {
+        if (!existingProfile.trim()) { alert("Paste your existing profile/bio text."); setGenerating(false); return; }
+
+        const [rewritten, keywords, improvements] = await Promise.all([
+          callClaude(apiKey,
+            `You are a ${pl.name} profile optimisation expert. You've helped 500+ freelancers get to Top Rated.`,
+            `Rewrite this ${pl.name} profile/bio to win more clients:\n\nCurrent profile:\n${existingProfile}\n\nService: ${config.service}\nTarget clients: ${config.niche} in ${config.country}\n\nMake it:\n- Result-focused (lead with outcomes, not skills)\n- Specific (numbers, types of clients, niches)\n- Credible (avoid vague claims)\n- 150–200 words\n- First person, confident but not arrogant`
+          ),
+          callClaude(apiKey,
+            "You are a freelance platform SEO expert.",
+            `List the top 10 keywords this ${pl.name} freelancer should include in their profile for maximum search visibility:\n\nService: ${config.service}\nNiche: ${config.niche}\n\nReturn as a simple numbered list with a 1-line explanation for each.`
+          ),
+          callClaude(apiKey,
+            `You are a ${pl.name} profile reviewer who gives brutally honest, actionable feedback.`,
+            `Review this profile and give 5 specific improvements:\n\n${existingProfile}\n\nFor each improvement:\n- What's wrong (be specific)\n- How to fix it (give the exact text if possible)\n\nFormat as numbered list.`
+          ),
+        ]);
+
+        setOutput([
+          { label: "✨ Rewritten Profile", content: rewritten },
+          { label: "🔍 SEO Keywords to Add", content: keywords },
+          { label: "🔧 5 Improvements", content: improvements },
+        ]);
+      }
+
+      setActiveOut(0);
+    } catch (e) { alert("Error: " + e.message); }
+    setGenerating(false);
+  }
+
+  function copyOut(text) {
+    navigator.clipboard.writeText(text);
+    setCopied(true); setTimeout(() => setCopied(false), 2000);
+  }
+
+  const MODES = [
+    { key:"proposal", icon:"📝", label:"Job Proposal",    desc:"Paste a job post, get a winning bid" },
+    { key:"gig",      icon:"🛍️", label:"Gig Creator",     desc:"Create full gig listing from scratch" },
+    { key:"optimize", icon:"⚡", label:"Profile Optimizer",desc:"Rewrite profile to rank higher" },
+  ];
+
+  return (
+    <div className="freelance-wrap">
+      <div className="freelance-header">
+        <h2>🎯 Upwork / Fiverr Proposal Generator</h2>
+        <p className="sub">Win more jobs with AI-written proposals, optimized gig listings, and profile rewrites</p>
+      </div>
+
+      {/* Platform selector */}
+      <div className="fl-platform-tabs">
+        {PLATFORMS_FL.map(p => (
+          <button key={p.key}
+            className={`fl-platform-btn ${platform === p.key ? "active" : ""}`}
+            style={platform === p.key ? { borderColor: p.color, background: p.bg, color: p.color } : {}}
+            onClick={() => { setPlatform(p.key); setOutput(null); }}>
+            <span className="fl-platform-icon">{p.icon}</span>
+            <span className="fl-platform-name">{p.name}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Mode selector */}
+      <div className="fl-mode-tabs">
+        {MODES.map(m => (
+          <button key={m.key}
+            className={`fl-mode-btn ${mode === m.key ? "active" : ""}`}
+            style={mode === m.key ? { borderColor: pl.color, background: pl.bg } : {}}
+            onClick={() => { setMode(m.key); setOutput(null); }}>
+            <span className="fl-mode-icon">{m.icon}</span>
+            <div>
+              <div className="fl-mode-label" style={mode === m.key ? { color: pl.color } : {}}>{m.label}</div>
+              <div className="fl-mode-desc">{m.desc}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <div className="fl-body">
+        {/* Input panel */}
+        <div className="fl-input-panel">
+          <div className="card">
+            {/* Proposal mode */}
+            {mode === "proposal" && <>
+              <h3>📋 Job Post Details</h3>
+              <div className="field">
+                <label>📄 Paste Job Post / Description <span className="required-star">*</span></label>
+                <textarea className="fl-textarea" rows={10}
+                  placeholder={"Paste the full Upwork/Fiverr job description here…\n\nExample:\nI need a professional WordPress website for my dental clinic. Looking for someone who can...\n\nBudget: $500\nTimeline: 2 weeks"}
+                  value={jobPost} onChange={e => setJobPost(e.target.value)} />
+              </div>
+              <div className="fl-form-row">
+                <div className="field">
+                  <label>💵 Your Bid Amount</label>
+                  <input type="text" placeholder="$750" value={bidAmount} onChange={e => setBidAmount(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label>📅 Delivery (days)</label>
+                  <input type="text" placeholder="7" value={deliveryDays} onChange={e => setDeliveryDays(e.target.value)} />
+                </div>
+              </div>
+              <div className="field">
+                <label>🏆 Your Relevant Experience (optional)</label>
+                <input type="text" placeholder="Built 30+ Shopify stores, including $2M revenue client" value={yourExperience} onChange={e => setYourExperience(e.target.value)} />
+                <span className="field-hint">1 sentence — the strongest result you have in this area</span>
+              </div>
+            </>}
+
+            {/* Gig mode */}
+            {mode === "gig" && <>
+              <h3>🛍️ Gig Details</h3>
+              <div className="field">
+                <label>📂 Category</label>
+                <select value={gigCategory} onChange={e => setGigCategory(e.target.value)}
+                  style={{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:8,padding:"9px 12px",fontSize:14}}>
+                  {JOB_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div className="field">
+                <label>🔑 Target Keywords (buyers search for)</label>
+                <input type="text" placeholder="wordpress website, business website, responsive design" value={gigKeywords} onChange={e => setGigKeywords(e.target.value)} />
+                <span className="field-hint">Comma-separated — what would your buyer type in search?</span>
+              </div>
+              <div className="fl-form-row three">
+                <div className="field"><label>🥉 Basic Price</label><input type="text" placeholder="$50" value={gigPriceBasic} onChange={e => setGigPriceBasic(e.target.value)} /></div>
+                <div className="field"><label>🥈 Standard Price</label><input type="text" placeholder="$150" value={gigPriceStandard} onChange={e => setGigPriceStandard(e.target.value)} /></div>
+                <div className="field"><label>🥇 Premium Price</label><input type="text" placeholder="$350" value={gigPricePremium} onChange={e => setGigPricePremium(e.target.value)} /></div>
+              </div>
+            </>}
+
+            {/* Optimize mode */}
+            {mode === "optimize" && <>
+              <h3>⚡ Profile Optimizer</h3>
+              <div className="field">
+                <label>📄 Paste Your Current Profile / Bio <span className="required-star">*</span></label>
+                <textarea className="fl-textarea" rows={10}
+                  placeholder={"Paste your current Upwork overview or Fiverr bio here…\n\nExample:\nI am a web developer with 5 years of experience. I specialize in WordPress and can build any kind of website. I am hardworking and deliver on time..."}
+                  value={existingProfile} onChange={e => setExistingProfile(e.target.value)} />
+              </div>
+            </>}
+
+            <button className="btn-primary fl-generate-btn"
+              style={{ background: `linear-gradient(135deg, ${pl.color}, ${pl.color}cc)` }}
+              onClick={generate} disabled={generating}>
+              {generating ? `⏳ Generating ${pl.name} assets…` : `✨ Generate ${pl.name} ${mode === "proposal" ? "Proposals" : mode === "gig" ? "Gig Content" : "Profile Rewrite"}`}
+            </button>
+          </div>
+
+          {/* Platform tips */}
+          <div className="card fl-tips-card" style={{ borderLeft: `4px solid ${pl.color}` }}>
+            <h3 style={{ color: pl.color }}>💡 {pl.name} Winning Tips</h3>
+            {pl.tips.map((t, i) => (
+              <div key={i} className="fl-tip">
+                <span className="fl-tip-num" style={{ background: pl.color }}>{ i + 1}</span>
+                <span>{t}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Saved proposals */}
+          {saved.length > 0 && (
+            <div className="card">
+              <h3>📂 Saved ({saved.length})</h3>
+              <div className="fl-saved-list">
+                {saved.slice(0, 8).map(s => (
+                  <div key={s.id} className="fl-saved-item">
+                    <div className="fl-saved-meta">
+                      <span className="fl-saved-platform">{PLATFORMS_FL.find(p=>p.key===s.platform)?.icon} {s.platform}</span>
+                      <span className="fl-saved-mode">{s.mode}</span>
+                      <span className="fl-saved-date">{new Date(s.savedAt).toLocaleDateString()}</span>
+                    </div>
+                    <div className="fl-saved-title">{s.title}</div>
+                    <button className="btn-ghost" style={{fontSize:11,marginTop:4}} onClick={() => { navigator.clipboard.writeText(s.content); }}>📋 Copy</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Output panel */}
+        <div className="fl-output-panel">
+          {!output && !generating && (
+            <div className="fl-placeholder">
+              <div className="fl-placeholder-icon">{pl.icon}</div>
+              <h3>Ready to generate {pl.name} content</h3>
+              <p>Fill in the details on the left and click Generate.</p>
+              <div className="fl-what-you-get">
+                <div className="fl-what-title">What you'll get:</div>
+                {mode === "proposal" && (
+                  <div className="fl-what-list">
+                    <div>🎯 Main proposal — hook + approach + proof + question</div>
+                    <div>⚡ Short cover letter — 100-word punchy version</div>
+                    <div>❓ 5 clarifying questions — show expertise, qualify client</div>
+                  </div>
+                )}
+                {mode === "gig" && (
+                  <div className="fl-what-list">
+                    <div>📌 5 SEO-optimized gig titles</div>
+                    <div>📝 Full gig description (250–350 words)</div>
+                    <div>💰 3 packages — Basic / Standard / Premium</div>
+                    <div>❓ 5 buyer FAQs to close objections</div>
+                    <div>🏷️ Top 5 search tags</div>
+                  </div>
+                )}
+                {mode === "optimize" && (
+                  <div className="fl-what-list">
+                    <div>✨ Rewritten profile — results-focused, 150–200 words</div>
+                    <div>🔍 10 SEO keywords to add for more visibility</div>
+                    <div>🔧 5 specific improvements with exact fixes</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {generating && (
+            <div className="fl-generating">
+              <div className="fl-gen-spinner">✨</div>
+              <h3>Generating {pl.name} content…</h3>
+              <p>Running {mode === "gig" ? "5" : "3"} parallel AI writes</p>
+              <div className="fl-gen-dots"><span/><span/><span/></div>
+            </div>
+          )}
+
+          {output && (
+            <div className="fl-output">
+              {/* Output tabs */}
+              <div className="fl-output-tabs">
+                {output.map((o, i) => (
+                  <button key={i}
+                    className={`fl-output-tab ${activeOut === i ? "active" : ""}`}
+                    style={activeOut === i ? { borderColor: pl.color, color: pl.color, background: pl.bg } : {}}
+                    onClick={() => setActiveOut(i)}>
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Output content */}
+              <div className="card fl-output-content">
+                <div className="fl-output-header">
+                  <strong>{output[activeOut].label}</strong>
+                  <button className="btn-ghost copy-btn" onClick={() => copyOut(output[activeOut].content)}>
+                    {copied ? "✓ Copied!" : "📋 Copy"}
+                  </button>
+                </div>
+                <pre className="result-pre fl-pre">{output[activeOut].content}</pre>
+              </div>
+
+              {/* Score card */}
+              {mode === "proposal" && activeOut === 0 && (
+                <div className="card fl-score-card">
+                  <h3>✅ Proposal Quality Checklist</h3>
+                  <div className="fl-checklist">
+                    {[
+                      "Starts with their problem, not 'Hi I'm'",
+                      "Mentions a specific result or number",
+                      "Shows understanding of their exact need",
+                      "Explains your approach in steps",
+                      "Ends with ONE smart question",
+                      "Under 200 words",
+                    ].map((item, i) => (
+                      <div key={i} className="fl-check-item">
+                        <span className="fl-check-icon">✅</span>
+                        <span>{item}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Data Store Tab ────────────────────────────────────────────────────────────
 function DataStoreTab({sheetsConfig,setSheetsConfig,stages,config}){
   const leads=Array.isArray(stages.leads?.result)?stages.leads.result:[];
@@ -1788,7 +2224,8 @@ export default function App(){
       {tab===5&&<PipelineTab apiKey={apiKey} config={config} stages={stages} sheetsConfig={sheetsConfig}/>}
       {tab===6&&<MeetingsTab config={config} stages={stages}/>}
       {tab===7&&<PortfolioTab apiKey={apiKey} config={config}/>}
-      {tab===8&&<DataStoreTab sheetsConfig={sheetsConfig} setSheetsConfig={setSheetsConfig} stages={stages} config={config}/>}
+      {tab===8&&<FreelanceTab apiKey={apiKey} config={config}/>}
+      {tab===9&&<DataStoreTab sheetsConfig={sheetsConfig} setSheetsConfig={setSheetsConfig} stages={stages} config={config}/>}
     </main>
   </div>);
 }
