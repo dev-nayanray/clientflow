@@ -110,7 +110,7 @@ async function logSentEmail(sc,{to,subject,lead,cfg}){
 }
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
-const TABS=["⚙️ Setup","📥 Real Leads","🔍 Social","🚀 Workflow","📧 Send Emails","👥 Pipeline","📅 Meetings","📊 Data Store"];
+const TABS=["⚙️ Setup","📥 Real Leads","🔍 Social","🚀 Workflow","📧 Send Emails","👥 Pipeline","📅 Meetings","📁 Portfolio","📊 Data Store"];
 const DEFAULT_CONFIG={niche:"E-commerce Stores",service:"Web Design & Development",country:"United States",price:"$500 – $2,000",calendlyLink:"",yourName:"",yourEmail:"",companyName:"",googleClientId:""};
 const DEFAULT_SHEETS={apiKey:"",sheetId:"",enabled:false};
 const DEFAULT_API_KEYS={hunter:"",apollo:"",places:""};
@@ -1352,6 +1352,317 @@ function MeetingsTab({config,stages}){
   </div>);
 }
 
+// ── Portfolio & Case Study Generator (Priority 4) ─────────────────────────────
+const PORTFOLIO_TEMPLATES = [
+  { key:"saas",     label:"SaaS / Tech",      icon:"💻", accent:"#6366f1" },
+  { key:"agency",   label:"Agency / Creative", icon:"🎨", accent:"#ec4899" },
+  { key:"ecom",     label:"E-commerce",        icon:"🛒", accent:"#f59e0b" },
+  { key:"local",    label:"Local Business",    icon:"📍", accent:"#22c55e" },
+  { key:"coach",    label:"Coaching / Course", icon:"🎓", accent:"#3b82f6" },
+];
+
+const CASE_FIELDS = [
+  { key:"clientName",   label:"Client / Company Name",    placeholder:"Acme Shopify Store" },
+  { key:"industry",     label:"Industry / Niche",          placeholder:"E-commerce Fashion" },
+  { key:"problem",      label:"Problem They Had",          placeholder:"Low conversion rate, outdated website" },
+  { key:"solution",     label:"What You Did",              placeholder:"Redesigned site, added live chat, speed optimisation" },
+  { key:"result",       label:"Results Achieved",          placeholder:"Conversions +47%, revenue +$12k/month" },
+  { key:"duration",     label:"Project Duration",          placeholder:"3 weeks" },
+  { key:"investment",   label:"Project Value",             placeholder:"$1,500" },
+  { key:"testimonial",  label:"Client Testimonial (optional)", placeholder:"\"Rubel delivered exactly what we needed...\"" },
+];
+
+function PortfolioTab({ apiKey, config }) {
+  // Case studies list
+  const [cases, setCases] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("cf_cases") || "[]"); } catch { return []; }
+  });
+  const [form, setForm] = useState(() => Object.fromEntries(CASE_FIELDS.map(f => [f.key, ""])));
+  const [template, setTemplate] = useState("agency");
+  const [generating, setGenerating] = useState(false);
+  const [generated, setGenerated] = useState(null); // { caseStudy, pitchPage, email, linkedinPost }
+  const [activeOutput, setActiveOutput] = useState("caseStudy");
+  const [editingId, setEditingId] = useState(null);
+  const [copied, setCopied] = useState(null);
+  const [htmlPreview, setHtmlPreview] = useState(false);
+
+  useEffect(() => { localStorage.setItem("cf_cases", JSON.stringify(cases)); }, [cases]);
+
+  const tmpl = PORTFOLIO_TEMPLATES.find(t => t.key === template);
+  const formFilled = form.clientName && form.problem && form.solution && form.result;
+
+  function saveCase() {
+    if (!formFilled) { alert("Fill in at least: Client Name, Problem, Solution, and Result."); return; }
+    const entry = { ...form, template, id: editingId || Date.now(), savedAt: new Date().toISOString() };
+    if (editingId) {
+      setCases(c => c.map(x => x.id === editingId ? entry : x));
+      setEditingId(null);
+    } else {
+      setCases(c => [entry, ...c]);
+    }
+    setForm(Object.fromEntries(CASE_FIELDS.map(f => [f.key, ""])));
+    setGenerated(null);
+  }
+
+  function loadCase(c) {
+    setForm(Object.fromEntries(CASE_FIELDS.map(f => [f.key, c[f.key] || ""])));
+    setTemplate(c.template || "agency");
+    setEditingId(c.id);
+    setGenerated(null);
+    setActiveOutput("caseStudy");
+    window.scrollTo(0, 0);
+  }
+
+  function deleteCase(id) {
+    if (!window.confirm("Delete this case study?")) return;
+    setCases(c => c.filter(x => x.id !== id));
+    if (editingId === id) { setEditingId(null); setForm(Object.fromEntries(CASE_FIELDS.map(f => [f.key, ""]))); }
+  }
+
+  async function generate() {
+    if (!apiKey) { alert("Anthropic API key required."); return; }
+    if (!formFilled) { alert("Fill in Client Name, Problem, Solution, and Result first."); return; }
+    setGenerating(true); setGenerated(null);
+
+    const ctx = `
+Client: ${form.clientName} | Industry: ${form.industry || config.niche}
+Problem: ${form.problem}
+Solution: ${form.solution}
+Result: ${form.result}
+Duration: ${form.duration || "N/A"} | Value: ${form.investment || config.price}
+Testimonial: ${form.testimonial || "None provided"}
+Agency: ${config.companyName || "Our Agency"} | Service: ${config.service}
+Contact: ${config.yourName || ""} | Email: ${config.yourEmail || ""}
+Template style: ${tmpl?.label}`;
+
+    try {
+      // Run all 4 generations in parallel
+      const [caseStudy, pitchPage, email, linkedinPost] = await Promise.all([
+        // 1. Full case study document
+        callClaude(apiKey,
+          "You are a professional copywriter who writes compelling B2B case studies. Write in a clear, results-focused style.",
+          `Write a full case study document based on this project:\n${ctx}\n\nInclude these sections with proper headings:\n## Client Background\n## The Challenge\n## Our Approach\n## What We Built / Delivered\n## Results & ROI\n## Client Testimonial\n## Key Takeaways\n\nMake it persuasive, specific, and results-focused. Use the actual numbers provided.`
+        ),
+        // 2. HTML portfolio page (ready to publish)
+        callClaude(apiKey,
+          "You are an expert web developer. Generate a complete, beautiful, self-contained HTML page. No external dependencies except Google Fonts. Return ONLY the HTML code, starting with <!DOCTYPE html>.",
+          `Create a stunning portfolio/case study page for this project:\n${ctx}\n\nRequirements:\n- Clean modern design, color accent: ${tmpl?.accent}\n- Hero section with headline and key result metric\n- Problem → Solution → Results sections\n- Testimonial block (if provided)\n- Stats/numbers displayed prominently\n- Call to action: "Work with us" section with email ${config.yourEmail || "contact@agency.com"}\n- Mobile responsive\n- Professional typography (Google Fonts)\n- Return ONLY valid HTML, no markdown, no explanation`
+        ),
+        // 3. Outreach email using this case study
+        callClaude(apiKey,
+          "You are an expert cold email copywriter who uses social proof to win clients.",
+          `Write a cold outreach email to a NEW prospect that uses this case study as social proof:\n${ctx}\n\nTarget: ${config.niche} businesses in ${config.country}\nService being pitched: ${config.service}\nSender: ${config.yourName || "us"} from ${config.companyName || config.service}\n\nEmail structure: Subject line + body. Show the result in the first 2 lines. Under 140 words. End with soft CTA (15-min call). Do NOT make it sound generic.`
+        ),
+        // 4. LinkedIn post
+        callClaude(apiKey,
+          "You are a LinkedIn content expert who writes viral case study posts.",
+          `Write a LinkedIn post showcasing this case study:\n${ctx}\n\nFormat:\n- Hook line (1 sentence, result-first)\n- Short story (3–4 lines)\n- The 3 things we did (bullet points with •)\n- The numbers\n- Lesson / insight\n- CTA to DM or comment\n- 5 relevant hashtags\n\nTone: professional but human. Max 250 words.`
+        ),
+      ]);
+
+      setGenerated({ caseStudy, pitchPage, email, linkedinPost });
+      setActiveOutput("caseStudy");
+
+      // Auto-save the case if it's new
+      if (!editingId && formFilled) saveCase();
+
+    } catch (e) { alert("Generation error: " + e.message); }
+    setGenerating(false);
+  }
+
+  function copyOutput(text, key) {
+    navigator.clipboard.writeText(text);
+    setCopied(key); setTimeout(() => setCopied(null), 2000);
+  }
+
+  function downloadHTML() {
+    if (!generated?.pitchPage) return;
+    const blob = new Blob([generated.pitchPage], { type: "text/html" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${(form.clientName || "case-study").toLowerCase().replace(/\s+/g, "-")}-portfolio.html`;
+    a.click();
+  }
+
+  const OUTPUT_TABS = [
+    { key:"caseStudy",    label:"📄 Case Study",     desc:"Full document" },
+    { key:"pitchPage",    label:"🌐 HTML Page",       desc:"Ready to publish" },
+    { key:"email",        label:"✉️ Outreach Email",  desc:"Use as social proof" },
+    { key:"linkedinPost", label:"💼 LinkedIn Post",   desc:"Viral case study" },
+  ];
+
+  return (
+    <div className="portfolio-wrap">
+      <div className="portfolio-header">
+        <h2>📁 Portfolio & Case Study Generator</h2>
+        <p className="sub">Turn past projects into client-winning assets — case study, portfolio page, outreach email, and LinkedIn post in one click</p>
+      </div>
+
+      <div className="portfolio-grid">
+        {/* LEFT: Input form */}
+        <div className="portfolio-form-col">
+          {/* Template selector */}
+          <div className="card">
+            <h3>🎨 Portfolio Style</h3>
+            <div className="template-grid">
+              {PORTFOLIO_TEMPLATES.map(t => (
+                <button key={t.key}
+                  className={`template-btn ${template === t.key ? "active" : ""}`}
+                  style={template === t.key ? { borderColor: t.accent, background: t.accent + "15" } : {}}
+                  onClick={() => setTemplate(t.key)}>
+                  <span className="template-icon">{t.icon}</span>
+                  <span className="template-label" style={template === t.key ? { color: t.accent } : {}}>{t.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Case study form */}
+          <div className="card">
+            <h3>{editingId ? "✏️ Edit Case Study" : "➕ New Case Study"}</h3>
+            {CASE_FIELDS.map(f => (
+              <div key={f.key} className="field">
+                <label>{f.label}{["clientName","problem","solution","result"].includes(f.key) && <span className="required-star"> *</span>}</label>
+                {f.key === "testimonial" ? (
+                  <textarea className="notes-area" rows={3} placeholder={f.placeholder} value={form[f.key]}
+                    onChange={e => setForm(v => ({ ...v, [f.key]: e.target.value }))} />
+                ) : (
+                  <input type="text" placeholder={f.placeholder} value={form[f.key]}
+                    onChange={e => setForm(v => ({ ...v, [f.key]: e.target.value }))} />
+                )}
+              </div>
+            ))}
+            <div className="portfolio-form-actions">
+              <button className="btn-primary" style={{ background: `linear-gradient(135deg, ${tmpl?.accent}, ${tmpl?.accent}cc)` }}
+                onClick={generate} disabled={generating || !formFilled}>
+                {generating ? "⏳ Generating 4 assets…" : "✨ Generate All Assets"}
+              </button>
+              <button className="btn-secondary" onClick={saveCase} disabled={!formFilled}>
+                💾 Save Only
+              </button>
+              {editingId && (
+                <button className="btn-ghost" onClick={() => { setEditingId(null); setForm(Object.fromEntries(CASE_FIELDS.map(f => [f.key, ""]))); setGenerated(null); }}>
+                  ✕ Cancel Edit
+                </button>
+              )}
+            </div>
+            {generating && (
+              <div className="generating-progress">
+                <div className="gen-step">📄 Writing case study document…</div>
+                <div className="gen-step">🌐 Building HTML portfolio page…</div>
+                <div className="gen-step">✉️ Drafting outreach email…</div>
+                <div className="gen-step">💼 Crafting LinkedIn post…</div>
+              </div>
+            )}
+          </div>
+
+          {/* Saved case studies */}
+          {cases.length > 0 && (
+            <div className="card">
+              <h3>📂 Saved Case Studies ({cases.length})</h3>
+              <div className="saved-cases">
+                {cases.map(c => (
+                  <div key={c.id} className="saved-case-item">
+                    <div className="saved-case-info">
+                      <div className="saved-case-name">{c.clientName}</div>
+                      <div className="saved-case-meta">{c.industry || config.niche} · {c.duration || "N/A"}</div>
+                      <div className="saved-case-result">📈 {c.result?.substring(0, 60)}{c.result?.length > 60 ? "…" : ""}</div>
+                    </div>
+                    <div className="saved-case-actions">
+                      <button className="btn-ghost" style={{fontSize:12}} onClick={() => loadCase(c)}>✏️ Edit</button>
+                      <button className="btn-ghost" style={{fontSize:12,color:"#ef4444"}} onClick={() => deleteCase(c.id)}>🗑</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT: Generated output */}
+        <div className="portfolio-output-col">
+          {!generated && !generating && (
+            <div className="portfolio-placeholder">
+              <div className="placeholder-icon">✨</div>
+              <h3>Fill in your project details</h3>
+              <p>Click <strong>"Generate All Assets"</strong> and get 4 ready-to-use client-winning assets in under 30 seconds:</p>
+              <div className="placeholder-list">
+                <div className="placeholder-item">📄 <strong>Full case study</strong> — professional document to send prospects</div>
+                <div className="placeholder-item">🌐 <strong>HTML portfolio page</strong> — downloadable, publish anywhere</div>
+                <div className="placeholder-item">✉️ <strong>Outreach email</strong> — cold email using this result as proof</div>
+                <div className="placeholder-item">💼 <strong>LinkedIn post</strong> — viral case study format</div>
+              </div>
+            </div>
+          )}
+
+          {generated && (
+            <div className="generated-assets">
+              {/* Output tab switcher */}
+              <div className="output-tabs">
+                {OUTPUT_TABS.map(t => (
+                  <button key={t.key} className={`output-tab ${activeOutput === t.key ? "active" : ""}`}
+                    style={activeOutput === t.key ? { borderColor: tmpl?.accent, color: tmpl?.accent } : {}}
+                    onClick={() => { setActiveOutput(t.key); setHtmlPreview(false); }}>
+                    <div>{t.label}</div>
+                    <div className="output-tab-desc">{t.desc}</div>
+                  </button>
+                ))}
+              </div>
+
+              {/* Output content */}
+              <div className="output-content card">
+                <div className="output-content-header">
+                  <div>
+                    <strong>{OUTPUT_TABS.find(t => t.key === activeOutput)?.label}</strong>
+                    {activeOutput === "pitchPage" && <span className="output-badge">HTML</span>}
+                  </div>
+                  <div className="output-actions">
+                    {activeOutput === "pitchPage" && (
+                      <>
+                        <button className="btn-secondary" style={{fontSize:12}} onClick={() => setHtmlPreview(!htmlPreview)}>
+                          {htmlPreview ? "📝 View Code" : "👁 Preview"}
+                        </button>
+                        <button className="btn-primary" style={{fontSize:12}} onClick={downloadHTML}>⬇️ Download HTML</button>
+                      </>
+                    )}
+                    <button className="btn-ghost copy-btn" onClick={() => copyOutput(generated[activeOutput], activeOutput)}>
+                      {copied === activeOutput ? "✓ Copied!" : "📋 Copy"}
+                    </button>
+                  </div>
+                </div>
+
+                {activeOutput === "pitchPage" && htmlPreview ? (
+                  <div className="html-preview-frame">
+                    <iframe
+                      srcDoc={generated.pitchPage}
+                      title="Portfolio Page Preview"
+                      className="html-iframe"
+                      sandbox="allow-same-origin"
+                    />
+                  </div>
+                ) : (
+                  <pre className="result-pre output-pre">{generated[activeOutput]}</pre>
+                )}
+              </div>
+
+              {/* Quick-use tips */}
+              <div className="use-tips card">
+                <h3>🚀 How to Use These Assets</h3>
+                <div className="use-tips-grid">
+                  <div className="use-tip"><span className="use-tip-icon">📄</span><div><strong>Case Study</strong> — Attach to proposals, send when prospect asks for examples, add to your website</div></div>
+                  <div className="use-tip"><span className="use-tip-icon">🌐</span><div><strong>HTML Page</strong> — Upload to your website, share as a link, use as a landing page for campaigns</div></div>
+                  <div className="use-tip"><span className="use-tip-icon">✉️</span><div><strong>Outreach Email</strong> — Copy into 👥 Pipeline → Email for targeted prospects in this niche</div></div>
+                  <div className="use-tip"><span className="use-tip-icon">💼</span><div><strong>LinkedIn Post</strong> — Post once a week to attract inbound leads — this format gets 3–5× more reach</div></div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Data Store Tab ────────────────────────────────────────────────────────────
 function DataStoreTab({sheetsConfig,setSheetsConfig,stages,config}){
   const leads=Array.isArray(stages.leads?.result)?stages.leads.result:[];
@@ -1476,7 +1787,8 @@ export default function App(){
       {tab===4&&<EmailSenderTab config={config} apiKey={apiKey} stages={stages} sheetsConfig={sheetsConfig} gmailState={gmailState} setGmailState={setGmailState}/>}
       {tab===5&&<PipelineTab apiKey={apiKey} config={config} stages={stages} sheetsConfig={sheetsConfig}/>}
       {tab===6&&<MeetingsTab config={config} stages={stages}/>}
-      {tab===7&&<DataStoreTab sheetsConfig={sheetsConfig} setSheetsConfig={setSheetsConfig} stages={stages} config={config}/>}
+      {tab===7&&<PortfolioTab apiKey={apiKey} config={config}/>}
+      {tab===8&&<DataStoreTab sheetsConfig={sheetsConfig} setSheetsConfig={setSheetsConfig} stages={stages} config={config}/>}
     </main>
   </div>);
 }
