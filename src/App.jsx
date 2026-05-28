@@ -959,6 +959,95 @@ function LeadTable({leads}){
 }
 
 // ── Pipeline Tab ──────────────────────────────────────────────────────────────
+// ── Lead Detail Panel Component (extracted to fix React Hooks violation) ────────
+function LeadDetailPanel({lead,lid,st,lc,r,activities,notes,saveNote,updateStatus,
+  reminders,setShowReminder,content,loading,sheetsSaved,generate,config,buildCalendarLink}){
+  const [activeTab,setActiveTab]=useState("actions");
+  return(<div className="lead-detail-panel">
+    <div className="lead-detail-header">
+      <div>
+        <h3>{lead.name}</h3>
+        <div style={{fontSize:13,color:"#64748b",marginTop:2}}>{lead.contact}{lead.title?` · ${lead.title}`:""}</div>
+      </div>
+      <div className="lead-tags">
+        <span className="tag">{lead.size}</span>
+        {lead.verified&&<span className="tag tag-green">✅ Verified</span>}
+        {lead.platform&&lead.platform!=="Direct"&&<span className="tag tag-platform">{lead.platform}</span>}
+      </div>
+    </div>
+    <div className="lead-info-grid">
+      <div>📧 <a href={`mailto:${lead.email}`}>{lead.email||"No email"}</a></div>
+      {lead.website&&<div>🌐 <a href={lead.website} target="_blank" rel="noreferrer">{lead.website}</a></div>}
+      {lead.phone&&<div>📞 {lead.phone}</div>}
+      {lead.linkedin&&<div>💼 <a href={lead.linkedin} target="_blank" rel="noreferrer">LinkedIn</a></div>}
+      <div style={{gridColumn:"1/-1"}}>💡 {lead.pain_point}</div>
+      {lc&&<div style={{gridColumn:"1/-1",fontSize:12,color:"#64748b"}}>📆 Last contacted: <strong>{new Date(lc).toLocaleString()}</strong></div>}
+    </div>
+    <div className="status-reminder-row">
+      <div className="status-changer" style={{flex:1}}>
+        <label style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:".5px"}}>Pipeline Stage</label>
+        <div className="status-options">
+          {["New","Contacted","Replied","Meeting Booked","Proposal Sent","Won","Lost"].map(s=>(
+            <button key={s} className={`status-btn ${st===s?"active":""}`}
+              style={st===s?{background:{New:"#64748b",Contacted:"#3b82f6",Replied:"#f59e0b","Meeting Booked":"#8b5cf6","Proposal Sent":"#ec4899",Won:"#22c55e",Lost:"#ef4444"}[s],color:"#fff",borderColor:{New:"#64748b",Contacted:"#3b82f6",Replied:"#f59e0b","Meeting Booked":"#8b5cf6","Proposal Sent":"#ec4899",Won:"#22c55e",Lost:"#ef4444"}[s]}:{}}
+              onClick={()=>updateStatus(lid,s)}>
+              {{"New":"🆕","Contacted":"✉️","Replied":"💬","Meeting Booked":"📅","Proposal Sent":"📄","Won":"🏆","Lost":"❌"}[s]} {s}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="reminder-section">
+        <label style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:".5px"}}>Follow-up Reminder</label>
+        <div style={{marginTop:6}}>
+          {r?(<div className="reminder-active">
+            <ReminderBadge reminder={r}/>
+            <span className="reminder-msg">{r.message}</span>
+            <span className="reminder-date">{new Date(r.date).toLocaleDateString()}</span>
+            <button className="btn-ghost" style={{fontSize:11,padding:"2px 8px"}} onClick={()=>setShowReminder(true)}>✏️</button>
+          </div>):(
+            <button className="btn-secondary" style={{fontSize:12}} onClick={()=>setShowReminder(true)}>🔔 Set Reminder</button>
+          )}
+        </div>
+      </div>
+    </div>
+    <div className="detail-tabs">
+      {[["actions","⚡ Actions"],["notes","📝 Notes"],["activity","📋 Activity"]].map(([t,l])=>(
+        <button key={t} className={`detail-tab ${activeTab===t?"active":""}`} onClick={()=>setActiveTab(t)}>{l}</button>
+      ))}
+    </div>
+    {activeTab==="actions"&&<div className="lead-actions">
+      {[["email","✉️","Cold Email"],["dm","💬","Social DM"],["proposal","📄","Proposal"],["meeting","📅","Meeting"]].map(([type,icon,label])=>{
+        const key=`${lid}-${type}`;
+        return(<div key={type} className="lead-action-block">
+          <div className="lead-action-header">
+            <button className="btn-secondary" disabled={loading[key]} onClick={()=>generate(lead,type)}>
+              {loading[key]?`⏳ Generating…`:`${icon} ${label}`}
+            </button>
+            {sheetsSaved[key]&&<span className="sheets-saved-badge">📊 Saved</span>}
+          </div>
+          {content[key]&&<div className="generated-content">
+            <pre>{content[key]}</pre>
+            <div className="generated-actions">
+              <button className="btn-ghost copy-btn" onClick={()=>navigator.clipboard.writeText(content[key])}>📋 Copy</button>
+              {type==="meeting"&&<a className="btn-primary gcal-btn"
+                href={buildCalendarLink({title:`Discovery – ${config.companyName||config.service} × ${lead.name}`,description:content[key],startISO:(()=>{const d=new Date();d.setDate(d.getDate()+7);d.setHours(10,0,0,0);return d.toISOString();})(),durationMins:30,location:config.calendlyLink||"Google Meet"})}
+                target="_blank" rel="noreferrer">📅 Add to Calendar</a>}
+            </div>
+          </div>}
+        </div>);
+      })}
+    </div>}
+    {activeTab==="notes"&&<div style={{padding:"4px 0"}}>
+      <textarea className="notes-area" style={{minHeight:160}} placeholder="Notes — call summary, what they said, next steps…"
+        value={notes[lid]||""} onChange={e=>saveNote(lid,e.target.value)} rows={6}/>
+      <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>Auto-saved</div>
+    </div>}
+    {activeTab==="activity"&&<div style={{padding:"4px 0"}}>
+      <ActivityLog activities={activities[lid]}/>
+    </div>}
+  </div>);
+}
+
 // ── CRM Pipeline Tab (Priority 3) ────────────────────────────────────────────
 const PIPELINE_STAGES=["New","Contacted","Replied","Meeting Booked","Proposal Sent","Won","Lost"];
 const PIPELINE_COLORS={New:"#64748b",Contacted:"#3b82f6",Replied:"#f59e0b","Meeting Booked":"#8b5cf6","Proposal Sent":"#ec4899",Won:"#22c55e",Lost:"#ef4444"};
@@ -1223,107 +1312,27 @@ function PipelineTab({apiKey,config,stages,sheetsConfig}){
         </div>
 
         {/* Detail panel */}
-        {selected!==null&&leads[selected]&&(()=>{
-          const lead=leads[selected];const lid=leadId(lead);const st=status[lid]||"New";
-          const lc=lastContacted[lid];const r=reminders[lid];
-          const [activeTab,setActiveTab]=useState("actions");
-          return(<div className="lead-detail-panel">
-            {/* Lead header */}
-            <div className="lead-detail-header">
-              <div>
-                <h3>{lead.name}</h3>
-                <div style={{fontSize:13,color:"#64748b",marginTop:2}}>{lead.contact}{lead.title?` · ${lead.title}`:""}</div>
-              </div>
-              <div className="lead-tags">
-                <span className="tag">{lead.size}</span>
-                {lead.verified&&<span className="tag tag-green">✅ Verified</span>}
-                {lead.platform&&lead.platform!=="Direct"&&<span className="tag tag-platform">{lead.platform}</span>}
-              </div>
-            </div>
-
-            {/* Contact info */}
-            <div className="lead-info-grid">
-              <div>📧 <a href={`mailto:${lead.email}`}>{lead.email||"No email"}</a></div>
-              {lead.website&&<div>🌐 <a href={lead.website} target="_blank" rel="noreferrer">{lead.website}</a></div>}
-              {lead.phone&&<div>📞 {lead.phone}</div>}
-              {lead.linkedin&&<div>💼 <a href={lead.linkedin} target="_blank" rel="noreferrer">LinkedIn</a></div>}
-              <div style={{gridColumn:"1/-1"}}>💡 {lead.pain_point}</div>
-              {lc&&<div style={{gridColumn:"1/-1",fontSize:12,color:"#64748b"}}>📆 Last contacted: <strong>{new Date(lc).toLocaleString()}</strong></div>}
-            </div>
-
-            {/* Status + Reminder row */}
-            <div className="status-reminder-row">
-              <div className="status-changer" style={{flex:1}}>
-                <label style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:".5px"}}>Pipeline Stage</label>
-                <div className="status-options">
-                  {PIPELINE_STAGES.map(s=>(
-                    <button key={s} className={`status-btn ${st===s?"active":""}`}
-                      style={st===s?{background:PIPELINE_COLORS[s],color:"#fff",borderColor:PIPELINE_COLORS[s]}:{}}
-                      onClick={()=>updateStatus(lid,s)}>
-                      {STAGE_ICONS[s]} {s}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="reminder-section">
-                <label style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:".5px"}}>Follow-up Reminder</label>
-                <div style={{marginTop:6}}>
-                  {r?(<div className="reminder-active">
-                    <ReminderBadge reminder={r}/>
-                    <span className="reminder-msg">{r.message}</span>
-                    <span className="reminder-date">{new Date(r.date).toLocaleDateString()}</span>
-                    <button className="btn-ghost" style={{fontSize:11,padding:"2px 8px"}} onClick={()=>setShowReminder(true)}>✏️</button>
-                  </div>):(
-                    <button className="btn-secondary" style={{fontSize:12}} onClick={()=>setShowReminder(true)}>🔔 Set Reminder</button>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Inner tabs: Actions / Notes / Activity */}
-            <div className="detail-tabs">
-              {[["actions","⚡ Actions"],["notes","📝 Notes"],["activity","📋 Activity"]].map(([t,l])=>(
-                <button key={t} className={`detail-tab ${activeTab===t?"active":""}`} onClick={()=>setActiveTab(t)}>{l}</button>
-              ))}
-            </div>
-
-            {/* Actions tab */}
-            {activeTab==="actions"&&<div className="lead-actions">
-              {[["email","✉️","Cold Email"],["dm","💬","Social DM"],["proposal","📄","Proposal"],["meeting","📅","Meeting"]].map(([type,icon,label])=>{
-                const key=`${lid}-${type}`;
-                return(<div key={type} className="lead-action-block">
-                  <div className="lead-action-header">
-                    <button className="btn-secondary" disabled={loading[key]} onClick={()=>generate(lead,type)}>
-                      {loading[key]?`⏳ Generating…`:`${icon} ${label}`}
-                    </button>
-                    {sheetsSaved[key]&&<span className="sheets-saved-badge">📊 Saved</span>}
-                  </div>
-                  {content[key]&&<div className="generated-content">
-                    <pre>{content[key]}</pre>
-                    <div className="generated-actions">
-                      <button className="btn-ghost copy-btn" onClick={()=>navigator.clipboard.writeText(content[key])}>📋 Copy</button>
-                      {type==="meeting"&&<a className="btn-primary gcal-btn"
-                        href={buildCalendarLink({title:`Discovery – ${config.companyName||config.service} × ${lead.name}`,description:content[key],startISO:(()=>{const d=new Date();d.setDate(d.getDate()+7);d.setHours(10,0,0,0);return d.toISOString();})(),durationMins:30,location:config.calendlyLink||"Google Meet"})}
-                        target="_blank" rel="noreferrer">📅 Add to Calendar</a>}
-                    </div>
-                  </div>}
-                </div>);
-              })}
-            </div>}
-
-            {/* Notes tab */}
-            {activeTab==="notes"&&<div style={{padding:"4px 0"}}>
-              <textarea className="notes-area" style={{minHeight:160}} placeholder="Add notes about this lead — call summary, what they said, next steps…"
-                value={notes[lid]||""} onChange={e=>saveNote(lid,e.target.value)} rows={6}/>
-              <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>Notes saved automatically</div>
-            </div>}
-
-            {/* Activity tab */}
-            {activeTab==="activity"&&<div style={{padding:"4px 0"}}>
-              <ActivityLog activities={activities[lid]}/>
-            </div>}
-          </div>);
-        })()}
+        {selected!==null&&leads[selected]&&(
+          <LeadDetailPanel
+            lead={leads[selected]}
+            lid={leadId(leads[selected])}
+            st={status[leadId(leads[selected])]||"New"}
+            lc={lastContacted[leadId(leads[selected])]}
+            r={reminders[leadId(leads[selected])]}
+            activities={activities}
+            notes={notes}
+            saveNote={saveNote}
+            updateStatus={updateStatus}
+            reminders={reminders}
+            setShowReminder={setShowReminder}
+            content={content}
+            loading={loading}
+            sheetsSaved={sheetsSaved}
+            generate={generate}
+            config={config}
+            buildCalendarLink={buildCalendarLink}
+          />
+        )}
       </div>
     </>)}
   </div>);
