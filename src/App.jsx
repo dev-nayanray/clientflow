@@ -110,7 +110,7 @@ async function logSentEmail(sc,{to,subject,lead,cfg}){
 }
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
-const TABS=["⚙️ Setup","📥 Real Leads","🔍 Social","🚀 Workflow","📧 Send Emails","👥 Pipeline","📅 Meetings","📁 Portfolio","🎯 Freelance","📊 Data Store"];
+const TABS=["⚙️ Setup","📥 Real Leads","🔍 Social","🚀 Workflow","📧 Send Emails","👥 Pipeline","📅 Meetings","📁 Portfolio","🎯 Freelance","🗂️ Projects","📊 Data Store"];
 const DEFAULT_CONFIG={niche:"E-commerce Stores",service:"Web Design & Development",country:"United States",price:"$500 – $2,000",calendlyLink:"",yourName:"",yourEmail:"",companyName:"",googleClientId:""};
 const DEFAULT_SHEETS={apiKey:"",sheetId:"",enabled:false};
 const DEFAULT_API_KEYS={hunter:"",apollo:"",places:""};
@@ -2108,7 +2108,716 @@ Target clients: ${config.niche} in ${config.country}`;
   );
 }
 
-// ── Data Store Tab ────────────────────────────────────────────────────────────
+// ── PROJECT MANAGER TAB (Priority 6) ─────────────────────────────────────────
+// Full client project management: tasks, milestones, invoices, payments, time log
+
+const PM_STORAGE = {
+  projects: "cf_pm_projects",
+  tasks:    "cf_pm_tasks",
+  invoices: "cf_pm_invoices",
+  timelog:  "cf_pm_timelog",
+};
+
+const TASK_STATUS = ["To Do","In Progress","Review","Done","Blocked"];
+const TASK_PRIORITY = ["Low","Medium","High","Urgent"];
+const TASK_STATUS_COLOR = {"To Do":"#64748b","In Progress":"#3b82f6","Review":"#f59e0b","Done":"#22c55e","Blocked":"#ef4444"};
+const TASK_PRIORITY_COLOR = {"Low":"#94a3b8","Medium":"#f59e0b","High":"#f97316","Urgent":"#ef4444"};
+const INVOICE_STATUS = ["Draft","Sent","Paid","Overdue","Cancelled"];
+const INVOICE_STATUS_COLOR = {"Draft":"#64748b","Sent":"#3b82f6","Paid":"#22c55e","Overdue":"#ef4444","Cancelled":"#94a3b8"};
+
+function useLocalState(key, def) {
+  const [val, setVal] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(key) || "null") ?? def; }
+    catch { return def; }
+  });
+  const set = (v) => {
+    const next = typeof v === "function" ? v(val) : v;
+    setVal(next);
+    localStorage.setItem(key, JSON.stringify(next));
+  };
+  return [val, set];
+}
+
+function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function today() { return new Date().toISOString().slice(0, 10); }
+function fmt(iso) { if (!iso) return "—"; return new Date(iso).toLocaleDateString(); }
+function fmtMoney(n) { return "$" + Number(n || 0).toLocaleString(); }
+function daysDiff(iso) {
+  if (!iso) return null;
+  const diff = Math.ceil((new Date(iso) - new Date()) / 86400000);
+  return diff;
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+function DeadlineBadge({ date }) {
+  if (!date) return null;
+  const d = daysDiff(date);
+  if (d < 0) return <span className="dl-badge overdue">⚠️ {Math.abs(d)}d overdue</span>;
+  if (d === 0) return <span className="dl-badge today">🔴 Due today</span>;
+  if (d <= 3)  return <span className="dl-badge soon">🟠 {d}d left</span>;
+  return <span className="dl-badge ok">🟢 {d}d left</span>;
+}
+
+function ProgressRing({ pct }) {
+  const r = 20; const circ = 2 * Math.PI * r;
+  const stroke = circ - (pct / 100) * circ;
+  const color = pct === 100 ? "#22c55e" : pct > 60 ? "#3b82f6" : pct > 30 ? "#f59e0b" : "#ef4444";
+  return (
+    <svg width="52" height="52" className="progress-ring">
+      <circle cx="26" cy="26" r={r} fill="none" stroke="#f1f5f9" strokeWidth="5"/>
+      <circle cx="26" cy="26" r={r} fill="none" stroke={color} strokeWidth="5"
+        strokeDasharray={circ} strokeDashoffset={stroke}
+        transform="rotate(-90 26 26)" style={{transition:"stroke-dashoffset .4s"}}/>
+      <text x="26" y="30" textAnchor="middle" fontSize="11" fontWeight="700" fill={color}>{pct}%</text>
+    </svg>
+  );
+}
+
+function InvoicePDF({ inv, project, config }) {
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Invoice #${inv.number}</title>
+<style>
+  body{font-family:Arial,sans-serif;margin:40px;color:#1e293b;max-width:700px}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:40px}
+  .logo{font-size:24px;font-weight:800;color:#1d4ed8}
+  .inv-title{font-size:28px;font-weight:800;color:#1e293b}
+  .inv-num{color:#64748b;font-size:14px;margin-top:4px}
+  .status{display:inline-block;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;background:${inv.status==="Paid"?"#f0fdf4":"#eff6ff"};color:${inv.status==="Paid"?"#16a34a":"#1d4ed8"}}
+  .parties{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-bottom:40px}
+  .party h4{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:8px}
+  .party p{font-size:14px;line-height:1.8;margin:0}
+  table{width:100%;border-collapse:collapse;margin-bottom:30px}
+  th{background:#f8fafc;padding:10px 14px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#64748b;border-bottom:2px solid #e2e8f0}
+  td{padding:12px 14px;border-bottom:1px solid #f1f5f9;font-size:14px}
+  .total-row{background:#f8fafc;font-weight:700;font-size:16px}
+  .total-row td{padding:16px 14px}
+  .paid-stamp{color:#16a34a;font-size:20px;font-weight:800;border:3px solid #16a34a;display:inline-block;padding:6px 20px;border-radius:6px;transform:rotate(-5deg);margin-top:10px}
+  .footer{margin-top:40px;padding-top:20px;border-top:1px solid #e2e8f0;font-size:12px;color:#94a3b8;text-align:center}
+  .due-box{background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:14px;margin-bottom:20px}
+</style></head><body>
+<div class="header">
+  <div><div class="logo">${config.companyName || config.yourName || "Your Agency"}</div>
+    <div style="font-size:13px;color:#64748b;margin-top:4px">${config.yourEmail || ""}</div>
+  </div>
+  <div style="text-align:right">
+    <div class="inv-title">INVOICE</div>
+    <div class="inv-num">#${inv.number}</div>
+    <div style="margin-top:8px"><span class="status">${inv.status}</span></div>
+  </div>
+</div>
+<div class="parties">
+  <div class="party"><h4>From</h4><p><strong>${config.companyName || config.yourName || "Your Agency"}</strong><br>${config.yourEmail || ""}</p></div>
+  <div class="party"><h4>To</h4><p><strong>${project?.clientName || "Client"}</strong><br>${project?.clientEmail || ""}</p></div>
+</div>
+<div class="due-box">
+  <div style="display:flex;justify-content:space-between">
+    <div><div style="font-size:11px;color:#92400e;text-transform:uppercase;font-weight:700">Issue Date</div><div style="font-size:15px;font-weight:600">${fmt(inv.issueDate)}</div></div>
+    <div><div style="font-size:11px;color:#92400e;text-transform:uppercase;font-weight:700">Due Date</div><div style="font-size:15px;font-weight:600">${fmt(inv.dueDate)}</div></div>
+    <div><div style="font-size:11px;color:#92400e;text-transform:uppercase;font-weight:700">Amount Due</div><div style="font-size:22px;font-weight:800;color:#1e293b">${fmtMoney(inv.amount)}</div></div>
+  </div>
+</div>
+<table>
+  <thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead>
+  <tbody>
+    ${(inv.items || [{desc: inv.description || project?.name || "Services", qty: 1, rate: inv.amount}]).map(item =>
+      `<tr><td>${item.desc}</td><td>${item.qty || 1}</td><td>${fmtMoney(item.rate)}</td><td>${fmtMoney((item.qty||1)*item.rate)}</td></tr>`
+    ).join("")}
+  </tbody>
+  <tfoot><tr class="total-row"><td colspan="3">Total</td><td>${fmtMoney(inv.amount)}</td></tr></tfoot>
+</table>
+${inv.notes ? `<div style="background:#f8fafc;border-radius:8px;padding:14px;font-size:13px;color:#374151"><strong>Notes:</strong> ${inv.notes}</div>` : ""}
+${inv.status === "Paid" ? '<div class="paid-stamp">✓ PAID</div>' : ""}
+<div class="footer">Thank you for your business! · ${config.companyName || config.yourName || "Your Agency"}</div>
+</body></html>`;
+  return html;
+}
+
+// ── PROJECT MANAGER MAIN COMPONENT ───────────────────────────────────────────
+function ProjectManagerTab({ config, apiKey, stages }) {
+  const [projects, setProjects]   = useLocalState(PM_STORAGE.projects, []);
+  const [tasks, setTasks]         = useLocalState(PM_STORAGE.tasks, {});
+  const [invoices, setInvoices]   = useLocalState(PM_STORAGE.invoices, {});
+  const [timelog, setTimelog]     = useLocalState(PM_STORAGE.timelog, {});
+
+  const [activeProject, setActiveProject] = useState(null);
+  const [view, setView] = useState("overview"); // overview | tasks | invoices | timelog
+  const [showNewProject, setShowNewProject] = useState(false);
+  const [showNewTask, setShowNewTask] = useState(false);
+  const [showNewInvoice, setShowNewInvoice] = useState(false);
+  const [showTimer, setShowTimer] = useState(false);
+  const [generating, setGenerating] = useState(false);
+
+  // Won leads from pipeline as project candidates
+  const wonLeads = Array.isArray(stages?.leads?.result)
+    ? stages.leads.result.filter(l => l._won)
+    : [];
+
+  // ── Project CRUD ────────────────────────────────────────────────────────────
+  const proj = projects.find(p => p.id === activeProject) || null;
+  const projTasks   = tasks[activeProject]   || [];
+  const projInvs    = invoices[activeProject] || [];
+  const projTime    = timelog[activeProject]  || [];
+
+  function addProject(data) {
+    const p = { id: newId(), createdAt: today(), status: "Active", ...data };
+    setProjects(ps => [p, ...ps]);
+    setActiveProject(p.id);
+    setShowNewProject(false);
+  }
+
+  function updateProject(id, patch) {
+    setProjects(ps => ps.map(p => p.id === id ? { ...p, ...patch } : p));
+  }
+
+  function deleteProject(id) {
+    if (!window.confirm("Delete this project and all its data?")) return;
+    setProjects(ps => ps.filter(p => p.id !== id));
+    setTasks(t => { const n = { ...t }; delete n[id]; return n; });
+    setInvoices(i => { const n = { ...i }; delete n[id]; return n; });
+    setTimelog(t => { const n = { ...t }; delete n[id]; return n; });
+    if (activeProject === id) setActiveProject(null);
+  }
+
+  // ── Task CRUD ───────────────────────────────────────────────────────────────
+  function addTask(data) {
+    const t = { id: newId(), createdAt: today(), status: "To Do", priority: "Medium", ...data };
+    setTasks(ts => ({ ...ts, [activeProject]: [t, ...(ts[activeProject] || [])] }));
+    setShowNewTask(false);
+  }
+
+  function updateTask(tid, patch) {
+    setTasks(ts => ({
+      ...ts,
+      [activeProject]: (ts[activeProject] || []).map(t => t.id === tid ? { ...t, ...patch } : t)
+    }));
+  }
+
+  function deleteTask(tid) {
+    setTasks(ts => ({ ...ts, [activeProject]: (ts[activeProject] || []).filter(t => t.id !== tid) }));
+  }
+
+  // ── Invoice CRUD ─────────────────────────────────────────────────────────────
+  function addInvoice(data) {
+    const inv = {
+      id: newId(), createdAt: today(), status: "Draft",
+      number: `INV-${new Date().getFullYear()}-${String(projInvs.length + 1).padStart(3, "0")}`,
+      issueDate: today(),
+      items: [{ desc: data.description || proj?.name || "Services", qty: 1, rate: data.amount }],
+      ...data
+    };
+    setInvoices(is => ({ ...is, [activeProject]: [inv, ...(is[activeProject] || [])] }));
+    setShowNewInvoice(false);
+  }
+
+  function updateInvoice(iid, patch) {
+    setInvoices(is => ({
+      ...is,
+      [activeProject]: (is[activeProject] || []).map(i => i.id === iid ? { ...i, ...patch } : i)
+    }));
+  }
+
+  function downloadInvoice(inv) {
+    const html = InvoicePDF({ inv, project: proj, config });
+    const blob = new Blob([html], { type: "text/html" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+    a.download = `invoice-${inv.number}.html`; a.click();
+  }
+
+  // ── Time Log ─────────────────────────────────────────────────────────────────
+  function addTimeEntry(data) {
+    const entry = { id: newId(), date: today(), ...data };
+    setTimelog(tl => ({ ...tl, [activeProject]: [entry, ...(tl[activeProject] || [])] }));
+  }
+
+  // ── AI Task Generator ────────────────────────────────────────────────────────
+  async function generateTasks() {
+    if (!apiKey) { alert("Anthropic API key required."); return; }
+    if (!proj) return;
+    setGenerating(true);
+    try {
+      const raw = await callClaude(apiKey,
+        "You are a project manager expert. Return ONLY valid JSON, no markdown.",
+        `Generate a complete task breakdown for this project:
+Client: ${proj.clientName} | Service: ${proj.service || config.service}
+Budget: ${proj.budget} | Deadline: ${proj.deadline || "flexible"}
+Description: ${proj.description || ""}
+
+Return JSON array of tasks (8-12 tasks):
+[{"title":"Task name","description":"details","priority":"High/Medium/Low","dueDate":"YYYY-MM-DD","estimatedHours":2,"category":"Design/Dev/Content/Review/Communication"}]
+
+Make tasks specific, ordered logically, with realistic time estimates.`
+      );
+      const parsed = parseJSON(raw);
+      if (parsed?.length) {
+        parsed.forEach(t => addTask(t));
+        alert(`✅ ${parsed.length} tasks generated for "${proj.name}"!`);
+      }
+    } catch (e) { alert("Error: " + e.message); }
+    setGenerating(false);
+  }
+
+  // ── Computed stats ────────────────────────────────────────────────────────────
+  function getProjectStats(pid) {
+    const pt = tasks[pid] || [];
+    const pi = invoices[pid] || [];
+    const ptl = timelog[pid] || [];
+    const done = pt.filter(t => t.status === "Done").length;
+    const pct = pt.length ? Math.round((done / pt.length) * 100) : 0;
+    const totalInvoiced = pi.reduce((s, i) => s + Number(i.amount || 0), 0);
+    const totalPaid = pi.filter(i => i.status === "Paid").reduce((s, i) => s + Number(i.amount || 0), 0);
+    const totalHours = ptl.reduce((s, e) => s + Number(e.hours || 0), 0);
+    return { done, total: pt.length, pct, totalInvoiced, totalPaid, totalHours };
+  }
+
+  // ── Views ─────────────────────────────────────────────────────────────────────
+
+  // NEW PROJECT MODAL
+  function NewProjectModal() {
+    const [form, setForm] = useState({
+      name: "", clientName: "", clientEmail: "", service: config.service || "",
+      budget: "", deadline: "", description: "", status: "Active"
+    });
+    const f = (k) => ({ value: form[k], onChange: e => setForm(v => ({ ...v, [k]: e.target.value })) });
+    return (
+      <div className="modal-overlay" onClick={() => setShowNewProject(false)}>
+        <div className="modal" style={{ maxWidth: 540 }} onClick={e => e.stopPropagation()}>
+          <div className="modal-header">
+            <h3>➕ New Project</h3>
+            <button className="modal-close" onClick={() => setShowNewProject(false)}>✕</button>
+          </div>
+          <div className="modal-body">
+            <div className="pm-form-grid">
+              <div className="field pm-span2"><label>📋 Project Name *</label><input type="text" placeholder="Acme Corp Website Redesign" {...f("name")} /></div>
+              <div className="field"><label>👤 Client Name *</label><input type="text" placeholder="John Smith / Acme Corp" {...f("clientName")} /></div>
+              <div className="field"><label>📧 Client Email</label><input type="email" placeholder="john@acme.com" {...f("clientEmail")} /></div>
+              <div className="field"><label>🛠️ Service</label><input type="text" placeholder="Web Design & Development" {...f("service")} /></div>
+              <div className="field"><label>💵 Budget</label><input type="text" placeholder="$1,500" {...f("budget")} /></div>
+              <div className="field"><label>📅 Deadline</label><input type="date" {...f("deadline")} /></div>
+              <div className="field"><label>📊 Status</label>
+                <select style={{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:8,padding:"9px 12px"}}
+                  value={form.status} onChange={e => setForm(v => ({...v, status: e.target.value}))}>
+                  {["Active","On Hold","Completed","Cancelled"].map(s => <option key={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="field pm-span2"><label>📝 Description</label>
+                <textarea className="notes-area" rows={3} placeholder="Brief project description…" {...f("description")} />
+              </div>
+            </div>
+            <button className="btn-primary" style={{width:"100%",marginTop:8}} onClick={() => { if (!form.name || !form.clientName) { alert("Project Name and Client Name required."); return; } addProject(form); }}>
+              ✅ Create Project
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // NEW TASK MODAL
+  function NewTaskModal() {
+    const [form, setForm] = useState({ title:"", description:"", priority:"Medium", dueDate:"", estimatedHours:"", category:"" });
+    const f = k => ({ value: form[k], onChange: e => setForm(v=>({...v,[k]:e.target.value})) });
+    return (
+      <div className="modal-overlay" onClick={() => setShowNewTask(false)}>
+        <div className="modal" style={{maxWidth:480}} onClick={e=>e.stopPropagation()}>
+          <div className="modal-header"><h3>➕ New Task</h3><button className="modal-close" onClick={()=>setShowNewTask(false)}>✕</button></div>
+          <div className="modal-body">
+            <div className="pm-form-grid">
+              <div className="field pm-span2"><label>📋 Task Title *</label><input type="text" placeholder="Design homepage mockup" {...f("title")}/></div>
+              <div className="field"><label>🎯 Priority</label>
+                <select style={{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:8,padding:"9px 12px"}} value={form.priority} onChange={e=>setForm(v=>({...v,priority:e.target.value}))}>
+                  {TASK_PRIORITY.map(p=><option key={p}>{p}</option>)}
+                </select>
+              </div>
+              <div className="field"><label>📂 Category</label><input type="text" placeholder="Design / Dev / Content…" {...f("category")}/></div>
+              <div className="field"><label>📅 Due Date</label><input type="date" {...f("dueDate")}/></div>
+              <div className="field"><label>⏱️ Est. Hours</label><input type="number" placeholder="2" min="0.5" step="0.5" {...f("estimatedHours")}/></div>
+              <div className="field pm-span2"><label>📝 Description</label><textarea className="notes-area" rows={2} placeholder="Task details…" {...f("description")}/></div>
+            </div>
+            <button className="btn-primary" style={{width:"100%",marginTop:8}} onClick={()=>{if(!form.title){alert("Task title required.");return;}addTask(form);}}>
+              ✅ Add Task
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // NEW INVOICE MODAL
+  function NewInvoiceModal() {
+    const [form, setForm] = useState({ description: proj?.name || "", amount:"", dueDate:"", notes:"", type:"Fixed" });
+    const f = k => ({ value: form[k], onChange: e => setForm(v=>({...v,[k]:e.target.value})) });
+    return (
+      <div className="modal-overlay" onClick={()=>setShowNewInvoice(false)}>
+        <div className="modal" style={{maxWidth:440}} onClick={e=>e.stopPropagation()}>
+          <div className="modal-header"><h3>📄 New Invoice</h3><button className="modal-close" onClick={()=>setShowNewInvoice(false)}>✕</button></div>
+          <div className="modal-body">
+            <div className="pm-form-grid">
+              <div className="field pm-span2"><label>📋 Description *</label><input type="text" placeholder="Website Design — 50% Deposit" {...f("description")}/></div>
+              <div className="field"><label>💵 Amount *</label><input type="number" placeholder="750" min="0" {...f("amount")}/></div>
+              <div className="field"><label>📅 Due Date</label><input type="date" {...f("dueDate")}/></div>
+              <div className="field"><label>🏷️ Type</label>
+                <select style={{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:8,padding:"9px 12px"}} value={form.type} onChange={e=>setForm(v=>({...v,type:e.target.value}))}>
+                  {["Deposit","Milestone","Final Payment","Full Payment","Retainer"].map(t=><option key={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="field pm-span2"><label>📝 Notes</label><textarea className="notes-area" rows={2} placeholder="Payment terms, bank details…" {...f("notes")}/></div>
+            </div>
+            <button className="btn-primary" style={{width:"100%",marginTop:8}} onClick={()=>{if(!form.amount){alert("Amount required.");return;}addInvoice(form);}}>
+              ✅ Create Invoice
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // TIME LOGGER MODAL
+  function TimeLogModal() {
+    const [form, setForm] = useState({ description:"", hours:"", date:today(), category:"Development" });
+    const f = k => ({ value: form[k], onChange: e => setForm(v=>({...v,[k]:e.target.value})) });
+    return (
+      <div className="modal-overlay" onClick={()=>setShowTimer(false)}>
+        <div className="modal" style={{maxWidth:400}} onClick={e=>e.stopPropagation()}>
+          <div className="modal-header"><h3>⏱️ Log Time</h3><button className="modal-close" onClick={()=>setShowTimer(false)}>✕</button></div>
+          <div className="modal-body">
+            <div className="pm-form-grid">
+              <div className="field pm-span2"><label>📋 What did you work on?</label><input type="text" placeholder="Built homepage layout" {...f("description")}/></div>
+              <div className="field"><label>⏱️ Hours</label><input type="number" placeholder="2.5" min="0.25" step="0.25" {...f("hours")}/></div>
+              <div className="field"><label>📅 Date</label><input type="date" {...f("date")}/></div>
+              <div className="field pm-span2"><label>📂 Category</label>
+                <select style={{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:8,padding:"9px 12px"}} value={form.category} onChange={e=>setForm(v=>({...v,category:e.target.value}))}>
+                  {["Design","Development","Communication","Review","Research","Testing","Admin"].map(c=><option key={c}>{c}</option>)}
+                </select>
+              </div>
+            </div>
+            <button className="btn-primary" style={{width:"100%",marginTop:8}} onClick={()=>{if(!form.hours||!form.description){alert("Description and hours required.");return;}addTimeEntry(form);setShowTimer(false);}}>
+              ✅ Log Time
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── MAIN RENDER ───────────────────────────────────────────────────────────────
+  return (
+    <div className="pm-wrap">
+      {showNewProject && <NewProjectModal />}
+      {showNewTask    && activeProject && <NewTaskModal />}
+      {showNewInvoice && activeProject && <NewInvoiceModal />}
+      {showTimer      && activeProject && <TimeLogModal />}
+
+      <div className="pm-header">
+        <div>
+          <h2>🗂️ Project Manager</h2>
+          <p className="sub">Manage tasks, milestones, invoices and time — for every client you win</p>
+        </div>
+        <button className="btn-primary" onClick={() => setShowNewProject(true)}>➕ New Project</button>
+      </div>
+
+      {/* Overall stats bar */}
+      {projects.length > 0 && (() => {
+        const active = projects.filter(p => p.status === "Active").length;
+        const allInv = Object.values(invoices).flat();
+        const totalEarned = allInv.filter(i => i.status === "Paid").reduce((s,i) => s + Number(i.amount||0), 0);
+        const totalPending = allInv.filter(i => i.status === "Sent").reduce((s,i) => s + Number(i.amount||0), 0);
+        const allTime = Object.values(timelog).flat().reduce((s,e) => s + Number(e.hours||0), 0);
+        return (
+          <div className="pm-stats-bar">
+            <div className="pm-stat"><div className="pm-stat-val">{projects.length}</div><div className="pm-stat-label">Total Projects</div></div>
+            <div className="pm-stat"><div className="pm-stat-val" style={{color:"#22c55e"}}>{active}</div><div className="pm-stat-label">Active</div></div>
+            <div className="pm-stat"><div className="pm-stat-val" style={{color:"#22c55e"}}>{fmtMoney(totalEarned)}</div><div className="pm-stat-label">💰 Total Earned</div></div>
+            <div className="pm-stat"><div className="pm-stat-val" style={{color:"#f59e0b"}}>{fmtMoney(totalPending)}</div><div className="pm-stat-label">⏳ Pending Payment</div></div>
+            <div className="pm-stat"><div className="pm-stat-val">{allTime.toFixed(1)}h</div><div className="pm-stat-label">⏱️ Hours Logged</div></div>
+          </div>
+        );
+      })()}
+
+      <div className="pm-body">
+        {/* Project list sidebar */}
+        <div className="pm-sidebar">
+          <div className="pm-sidebar-title">Projects ({projects.length})</div>
+          {projects.length === 0 && (
+            <div className="pm-empty-sidebar">
+              <div style={{fontSize:32,marginBottom:8}}>🗂️</div>
+              <p>No projects yet.<br/>Click <strong>+ New Project</strong> to start.</p>
+              <p style={{fontSize:11,color:"#94a3b8",marginTop:8}}>Tip: Win a client in 👥 Pipeline, then create a project here.</p>
+            </div>
+          )}
+          {projects.map(p => {
+            const stats = getProjectStats(p.id);
+            const isActive = activeProject === p.id;
+            return (
+              <div key={p.id}
+                className={`pm-project-item ${isActive ? "active" : ""}`}
+                onClick={() => { setActiveProject(p.id); setView("overview"); }}>
+                <div className="pm-project-item-top">
+                  <span className="pm-project-name">{p.name}</span>
+                  <span className={`pm-status-badge ${p.status.toLowerCase().replace(" ","-")}`}>{p.status}</span>
+                </div>
+                <div className="pm-project-client">👤 {p.clientName}</div>
+                <div className="pm-project-meta">
+                  <span>📋 {stats.done}/{stats.total} tasks</span>
+                  {p.deadline && <DeadlineBadge date={p.deadline} />}
+                </div>
+                <div className="pm-project-progress-bar">
+                  <div style={{width:`${stats.pct}%`, background: stats.pct===100?"#22c55e":"#3b82f6"}}/>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Project detail */}
+        {!proj ? (
+          <div className="pm-no-project">
+            <div style={{fontSize:48}}>🗂️</div>
+            <h3>Select a project to manage</h3>
+            <p>Or create a new project to get started.</p>
+          </div>
+        ) : (
+          <div className="pm-detail">
+            {/* Project header */}
+            <div className="pm-detail-header">
+              <div>
+                <h3>{proj.name}</h3>
+                <div className="pm-detail-meta">
+                  <span>👤 {proj.clientName}</span>
+                  {proj.clientEmail && <span>📧 {proj.clientEmail}</span>}
+                  <span>💵 {proj.budget || "—"}</span>
+                  {proj.deadline && <span>📅 Deadline: {fmt(proj.deadline)}</span>}
+                  <DeadlineBadge date={proj.deadline} />
+                </div>
+              </div>
+              <div className="pm-detail-actions">
+                <select className="pm-status-select"
+                  value={proj.status}
+                  onChange={e => updateProject(proj.id, { status: e.target.value })}>
+                  {["Active","On Hold","Completed","Cancelled"].map(s => <option key={s}>{s}</option>)}
+                </select>
+                <button className="btn-ghost" style={{fontSize:11,color:"#ef4444"}} onClick={() => deleteProject(proj.id)}>🗑 Delete</button>
+              </div>
+            </div>
+
+            {/* Inner nav */}
+            <div className="pm-inner-nav">
+              {[["overview","📊 Overview"],["tasks","📋 Tasks"],["invoices","💵 Invoices"],["timelog","⏱️ Time Log"]].map(([v,l]) => (
+                <button key={v} className={`pm-nav-btn ${view===v?"active":""}`} onClick={() => setView(v)}>{l}</button>
+              ))}
+            </div>
+
+            {/* ── OVERVIEW ── */}
+            {view === "overview" && (() => {
+              const stats = getProjectStats(proj.id);
+              return (
+                <div className="pm-overview">
+                  <div className="pm-overview-stats">
+                    <div className="card pm-ov-stat">
+                      <ProgressRing pct={stats.pct} />
+                      <div><div className="pm-ov-label">Progress</div><div className="pm-ov-val">{stats.done}/{stats.total} tasks</div></div>
+                    </div>
+                    <div className="card pm-ov-stat">
+                      <div style={{fontSize:28}}>💰</div>
+                      <div><div className="pm-ov-label">Invoiced</div><div className="pm-ov-val">{fmtMoney(stats.totalInvoiced)}</div></div>
+                    </div>
+                    <div className="card pm-ov-stat">
+                      <div style={{fontSize:28}}>✅</div>
+                      <div><div className="pm-ov-label">Paid</div><div className="pm-ov-val" style={{color:"#22c55e"}}>{fmtMoney(stats.totalPaid)}</div></div>
+                    </div>
+                    <div className="card pm-ov-stat">
+                      <div style={{fontSize:28}}>⏱️</div>
+                      <div><div className="pm-ov-label">Hours Logged</div><div className="pm-ov-val">{stats.totalHours.toFixed(1)}h</div></div>
+                    </div>
+                  </div>
+
+                  {proj.description && <div className="card" style={{padding:14}}><p style={{fontSize:13,color:"#374151",lineHeight:1.6}}>{proj.description}</p></div>}
+
+                  {/* Upcoming deadlines */}
+                  {projTasks.filter(t => t.dueDate && t.status !== "Done").length > 0 && (
+                    <div className="card">
+                      <h3 style={{fontSize:14,marginBottom:12}}>⏰ Upcoming Deadlines</h3>
+                      {projTasks.filter(t => t.dueDate && t.status !== "Done")
+                        .sort((a,b) => a.dueDate.localeCompare(b.dueDate))
+                        .slice(0, 4)
+                        .map(t => (
+                          <div key={t.id} className="pm-deadline-row">
+                            <span className="pm-dl-title">{t.title}</span>
+                            <DeadlineBadge date={t.dueDate} />
+                          </div>
+                        ))}
+                    </div>
+                  )}
+
+                  {/* Unpaid invoices */}
+                  {projInvs.filter(i => i.status !== "Paid" && i.status !== "Cancelled").length > 0 && (
+                    <div className="card">
+                      <h3 style={{fontSize:14,marginBottom:12}}>💳 Unpaid Invoices</h3>
+                      {projInvs.filter(i => i.status !== "Paid" && i.status !== "Cancelled").map(i => (
+                        <div key={i.id} className="pm-inv-row">
+                          <span>{i.number} — {i.description}</span>
+                          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                            <strong>{fmtMoney(i.amount)}</strong>
+                            <span style={{background:INVOICE_STATUS_COLOR[i.status],color:"#fff",fontSize:10,padding:"2px 7px",borderRadius:4,fontWeight:700}}>{i.status}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* ── TASKS ── */}
+            {view === "tasks" && (
+              <div className="pm-tasks">
+                <div className="pm-tasks-toolbar">
+                  <button className="btn-primary" onClick={() => setShowNewTask(true)}>➕ Add Task</button>
+                  <button className="btn-secondary" onClick={generateTasks} disabled={generating}>
+                    {generating ? "⏳ Generating…" : "🤖 AI Generate Tasks"}
+                  </button>
+                </div>
+                {projTasks.length === 0 && (
+                  <div className="pm-empty"><p>No tasks yet. Add tasks manually or let AI generate a full task breakdown.</p></div>
+                )}
+                <div className="pm-task-list">
+                  {projTasks.map(t => (
+                    <div key={t.id} className={`pm-task-card ${t.status === "Done" ? "done" : ""}`}>
+                      <div className="pm-task-top">
+                        <div className="pm-task-left">
+                          <input type="checkbox" checked={t.status === "Done"}
+                            onChange={e => updateTask(t.id, { status: e.target.checked ? "Done" : "To Do" })}
+                            style={{width:16,height:16,cursor:"pointer"}}/>
+                          <span className={`pm-task-title ${t.status==="Done"?"done-text":""}`}>{t.title}</span>
+                        </div>
+                        <div className="pm-task-right">
+                          <span className="pm-priority-dot" style={{background:TASK_PRIORITY_COLOR[t.priority]}} title={t.priority}/>
+                          {t.estimatedHours && <span className="pm-task-hours">⏱️ {t.estimatedHours}h</span>}
+                          {t.dueDate && <DeadlineBadge date={t.dueDate} />}
+                          <select className="pm-task-status-sel"
+                            value={t.status}
+                            style={{background:TASK_STATUS_COLOR[t.status],color:"#fff"}}
+                            onChange={e => updateTask(t.id, { status: e.target.value })}>
+                            {TASK_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                          <button className="btn-ghost" style={{fontSize:11,padding:"2px 6px",color:"#ef4444"}} onClick={() => deleteTask(t.id)}>✕</button>
+                        </div>
+                      </div>
+                      {t.description && <div className="pm-task-desc">{t.description}</div>}
+                      {t.category && <span className="pm-task-category">{t.category}</span>}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Task summary */}
+                {projTasks.length > 0 && (
+                  <div className="pm-task-summary">
+                    {TASK_STATUS.map(s => {
+                      const count = projTasks.filter(t => t.status === s).length;
+                      return count > 0 ? (
+                        <span key={s} className="pm-task-summary-badge" style={{background:TASK_STATUS_COLOR[s]+"22",color:TASK_STATUS_COLOR[s],borderColor:TASK_STATUS_COLOR[s]+"44"}}>
+                          {s}: {count}
+                        </span>
+                      ) : null;
+                    })}
+                    <span style={{fontSize:12,color:"#64748b",marginLeft:"auto"}}>
+                      Total est: {projTasks.reduce((s,t) => s + Number(t.estimatedHours||0), 0)}h
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── INVOICES ── */}
+            {view === "invoices" && (
+              <div className="pm-invoices">
+                <div className="pm-tasks-toolbar">
+                  <button className="btn-primary" onClick={() => setShowNewInvoice(true)}>➕ New Invoice</button>
+                  <div className="pm-inv-totals">
+                    <span>Total: <strong>{fmtMoney(projInvs.reduce((s,i)=>s+Number(i.amount||0),0))}</strong></span>
+                    <span style={{color:"#22c55e"}}>Paid: <strong>{fmtMoney(projInvs.filter(i=>i.status==="Paid").reduce((s,i)=>s+Number(i.amount||0),0))}</strong></span>
+                    <span style={{color:"#f59e0b"}}>Pending: <strong>{fmtMoney(projInvs.filter(i=>i.status==="Sent").reduce((s,i)=>s+Number(i.amount||0),0))}</strong></span>
+                  </div>
+                </div>
+                {projInvs.length === 0 && <div className="pm-empty"><p>No invoices yet. Create your first invoice to send to the client.</p></div>}
+                <div className="pm-inv-list">
+                  {projInvs.map(inv => (
+                    <div key={inv.id} className="pm-inv-card">
+                      <div className="pm-inv-card-top">
+                        <div>
+                          <div className="pm-inv-number">{inv.number}</div>
+                          <div className="pm-inv-desc">{inv.description}</div>
+                          <div className="pm-inv-dates">Issued: {fmt(inv.issueDate)} · Due: {fmt(inv.dueDate)}</div>
+                        </div>
+                        <div className="pm-inv-right">
+                          <div className="pm-inv-amount">{fmtMoney(inv.amount)}</div>
+                          <select className="pm-inv-status-sel"
+                            value={inv.status}
+                            style={{background:INVOICE_STATUS_COLOR[inv.status],color:"#fff"}}
+                            onChange={e => updateInvoice(inv.id, { status: e.target.value })}>
+                            {INVOICE_STATUS.map(s => <option key={s}>{s}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="pm-inv-actions">
+                        <button className="btn-secondary" style={{fontSize:12}} onClick={() => downloadInvoice(inv)}>⬇️ Download HTML Invoice</button>
+                        {inv.status === "Sent" && (
+                          <button className="btn-ghost" style={{fontSize:12,color:"#22c55e"}} onClick={() => updateInvoice(inv.id, { status: "Paid", paidAt: today() })}>✅ Mark Paid</button>
+                        )}
+                        {inv.status === "Draft" && (
+                          <button className="btn-ghost" style={{fontSize:12,color:"#3b82f6"}} onClick={() => updateInvoice(inv.id, { status: "Sent" })}>📤 Mark Sent</button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── TIME LOG ── */}
+            {view === "timelog" && (
+              <div className="pm-timelog">
+                <div className="pm-tasks-toolbar">
+                  <button className="btn-primary" onClick={() => setShowTimer(true)}>➕ Log Time</button>
+                  <div className="pm-inv-totals">
+                    <span>Total hours: <strong>{projTime.reduce((s,e)=>s+Number(e.hours||0),0).toFixed(1)}h</strong></span>
+                    {proj.hourlyRate && <span style={{color:"#22c55e"}}>Value: <strong>{fmtMoney(projTime.reduce((s,e)=>s+Number(e.hours||0),0) * proj.hourlyRate)}</strong></span>}
+                  </div>
+                </div>
+                {projTime.length === 0 && <div className="pm-empty"><p>No time logged yet. Track hours to know your actual project profitability.</p></div>}
+                <div className="pm-time-list">
+                  {projTime.map(e => (
+                    <div key={e.id} className="pm-time-entry">
+                      <div className="pm-time-left">
+                        <div className="pm-time-desc">{e.description}</div>
+                        <div className="pm-time-cat">{e.category} · {fmt(e.date)}</div>
+                      </div>
+                      <div className="pm-time-hours">{Number(e.hours).toFixed(1)}h</div>
+                    </div>
+                  ))}
+                </div>
+                {projTime.length > 0 && (
+                  <div className="pm-time-breakdown">
+                    <div style={{fontSize:13,fontWeight:700,marginBottom:8}}>By Category:</div>
+                    {Object.entries(projTime.reduce((acc,e) => {acc[e.category]=(acc[e.category]||0)+Number(e.hours);return acc;},{}))
+                      .sort((a,b)=>b[1]-a[1])
+                      .map(([cat,hrs]) => (
+                        <div key={cat} className="pm-time-cat-row">
+                          <span>{cat}</span>
+                          <div className="pm-time-cat-bar"><div style={{width:`${(hrs/projTime.reduce((s,e)=>s+Number(e.hours||0),0))*100}%`}}/></div>
+                          <span>{hrs.toFixed(1)}h</span>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function DataStoreTab({sheetsConfig,setSheetsConfig,stages,config}){
   const leads=Array.isArray(stages.leads?.result)?stages.leads.result:[];
   const [testStatus,setTestStatus]=useState(null);const [testing,setTesting]=useState(false);
@@ -2234,7 +2943,8 @@ export default function App(){
       {tab===6&&<MeetingsTab config={config} stages={stages}/>}
       {tab===7&&<PortfolioTab apiKey={apiKey} config={config}/>}
       {tab===8&&<FreelanceTab apiKey={apiKey} config={config}/>}
-      {tab===9&&<DataStoreTab sheetsConfig={sheetsConfig} setSheetsConfig={setSheetsConfig} stages={stages} config={config}/>}
+      {tab===9&&<ProjectManagerTab config={config} apiKey={apiKey} stages={stages}/>}
+      {tab===10&&<DataStoreTab sheetsConfig={sheetsConfig} setSheetsConfig={setSheetsConfig} stages={stages} config={config}/>}
     </main>
   </div>);
 }
