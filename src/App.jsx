@@ -2885,6 +2885,16 @@ function DataStoreTab({sheetsConfig,setSheetsConfig,stages,config}){
 
 // ── Root App ──────────────────────────────────────────────────────────────────
 export default function App(){
+  // ── Auth & Subscription state ──────────────────────────────────────────────
+  const [authLoading, setAuthLoading] = useState(true);
+  const [session, setSession]         = useState(null);
+  const [user, setUser]               = useState(null);
+  const [profile, setProfile]         = useState(null);
+  const [subscription, setSubscription] = useState(null);
+  const [showPricing, setShowPricing] = useState(false);
+  const [showManageSub, setShowManageSub] = useState(false);
+
+  // ── App state ──────────────────────────────────────────────────────────────
   const [tab,setTab]=useState(0);
   const [apiKey,setApiKey]=useState(()=>sessionStorage.getItem("cf_key")||"");
   const [config,setConfig]=useState(()=>{try{return JSON.parse(localStorage.getItem("cf_config")||"null")||DEFAULT_CONFIG;}catch{return DEFAULT_CONFIG;}});
@@ -2894,6 +2904,56 @@ export default function App(){
   const [logs,setLogs]=useState([]);
   const [running,setRunning]=useState(false);
   const [gmailState,setGmailState]=useState({token:null,profile:null,connected:false});
+
+  // ── Supabase auth listener ─────────────────────────────────────────────────
+  useEffect(()=>{
+    // Check existing session
+    supabase.auth.getSession().then(async({data:{session:s}})=>{
+      if(s){ setSession(s); setUser(s.user); await loadUserData(s.user); }
+      setAuthLoading(false);
+    });
+    // Listen for auth changes
+    const{data:{subscription:authSub}}=supabase.auth.onAuthStateChange(async(_event,s)=>{
+      setSession(s); setUser(s?.user||null);
+      if(s?.user){ await loadUserData(s.user); }
+      else{ setProfile(null); setSubscription(null); }
+    });
+    // Handle Stripe redirect back (?payment=success&plan=monthly)
+    const params=new URLSearchParams(window.location.search);
+    if(params.get("payment")==="success"){
+      const plan=params.get("plan");
+      const userId=params.get("user");
+      if(plan&&userId){
+        import("./supabase").then(({createSubscription})=>{
+          createSubscription(userId,plan).then(sub=>{ setSubscription(sub); setShowPricing(false); });
+        });
+      }
+      window.history.replaceState({},"",window.location.pathname);
+    }
+    return()=>authSub.unsubscribe();
+  },[]);
+
+  async function loadUserData(u){
+    try{
+      const[prof,sub]=await Promise.all([getProfile(u.id),getSubscription(u.id)]);
+      setProfile(prof);
+      setSubscription(sub);
+      // Auto-populate config from profile
+      if(prof?.full_name&&!config.yourName){ setConfig(c=>({...c,yourName:prof.full_name})); }
+    }catch(e){ console.warn("loadUserData error:",e.message); }
+  }
+
+  async function handleSignOut(){
+    await signOut();
+    setSession(null); setUser(null); setProfile(null); setSubscription(null);
+  }
+
+  function handleAuth(newSession, newUser){
+    setSession(newSession); setUser(newUser);
+    if(newUser) loadUserData(newUser);
+  }
+
+  const isActive = isSubscriptionActive(subscription);
 
   useEffect(()=>{if(apiKey)sessionStorage.setItem("cf_key",apiKey);},[apiKey]);
   useEffect(()=>{localStorage.setItem("cf_config",JSON.stringify(config));},[config]);
