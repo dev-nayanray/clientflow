@@ -14,6 +14,7 @@ import {
 } from "./supabase";
 import AuthPage from "./Auth";
 import { PricingPage, SubBanner, ManageSubscription } from "./Subscription";
+import SetupWizard from "./SetupWizard";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const MODEL = "claude-sonnet-4-5";
@@ -2899,6 +2900,8 @@ export default function App(){
   const [subscription, setSubscription] = useState(null);
   const [showPricing, setShowPricing] = useState(false);
   const [showManageSub, setShowManageSub] = useState(false);
+  const [dbReady, setDbReady]         = useState(null); // null=checking, true=ready, false=needs setup
+  const SUPABASE_URL = "https://ifdqoizimmoirkotbjmd.supabase.co";
 
   // ── App state ──────────────────────────────────────────────────────────────
   const [tab,setTab]=useState(0);
@@ -2936,8 +2939,34 @@ export default function App(){
       }
       window.history.replaceState({},"",window.location.pathname);
     }
+    // Check if DB tables exist (schema has been run)
+    checkDbReady();
     return()=>authSub.unsubscribe();
   },[]);
+
+  async function checkDbReady() {
+    try {
+      // Try reading profiles table — if 403 with "Host not in allowlist" = tables need creating
+      // If 200 or 401 (auth needed) = tables exist
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?select=id&limit=0`, {
+        headers: {
+          "apikey": "sb_publishable_TKYDxVxzOQPURfghs6_AXA_kHSqTyzD",
+          "Authorization": "Bearer sb_publishable_TKYDxVxzOQPURfghs6_AXA_kHSqTyzD"
+        }
+      });
+      // 200 = table exists and accessible
+      // 401 = table exists but need auth (still means DB is set up)  
+      // 406 = table exists (Not Acceptable, still table exists)
+      // 404 or specific errors = table missing
+      const body = await res.text();
+      const needsSetup = res.status === 404 || 
+        (res.status === 400 && body.includes("does not exist")) ||
+        body.includes("relation") && body.includes("does not exist");
+      setDbReady(!needsSetup);
+    } catch {
+      setDbReady(true); // assume ready on network error, don't block app
+    }
+  }
 
   async function loadUserData(u){
     try{
@@ -2978,6 +3007,35 @@ export default function App(){
     setStages(s=>({...s,leads:{status:"done",result:leads}}));
     setTab(3);
   }
+
+    // ── Auth & DB Guards ────────────────────────────────────────────────────────
+
+  // Loading state
+  if(authLoading) return(
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",
+      minHeight:"100vh",background:"#f0f2f5",fontFamily:"sans-serif"}}>
+      <div style={{textAlign:"center"}}>
+        <div style={{fontSize:48,marginBottom:16}}>⚡</div>
+        <div style={{fontSize:18,fontWeight:700,color:"#1e293b"}}>ClientFlow AI</div>
+        <div style={{fontSize:13,color:"#64748b",marginTop:8}}>Loading…</div>
+      </div>
+    </div>
+  );
+
+  // First-time DB setup
+  if(dbReady===false) return(
+    <SetupWizard supabaseUrl={SUPABASE_URL} onComplete={()=>setDbReady(true)}/>
+  );
+
+  // Not logged in
+  if(!session) return <AuthPage onAuth={handleAuth}/>;
+
+  // Pricing page
+  if(showPricing) return(
+    <PricingPage user={user} subscription={subscription}
+      onSubscribed={sub=>{setSubscription(sub);setShowPricing(false);}}
+      onSkip={()=>setShowPricing(false)}/>
+  );
 
   return(<div className="app">
     <header className="header">
