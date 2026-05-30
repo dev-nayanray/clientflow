@@ -1,100 +1,275 @@
-# ⚡ ClientFlow AI — Automated Client Acquisition System
+# ⚡ ClientFlow AI — Complete Client Acquisition & Project Management System
 
-> **Full Workflow:** Find Lead → Research Site → Draft Email → Send → Follow Up → Book Meeting → Send Proposal
+> **The full workflow:** Find Real Leads → AI Email → Follow Up → Book Meeting → Send Proposal → Manage Project → Invoice Client
 
-A complete AI-powered B2B client acquisition pipeline built with React + Claude AI.
-
----
-
-## 🚀 Features
-
-### 🔍 Social Media Lead Finder (NEW)
-Find prospects directly on **LinkedIn**, **Instagram**, and **X (Twitter)**:
-- **LinkedIn** — Decision makers, CEOs, founders (best for B2B)
-- **Instagram** — Visual businesses: restaurants, fitness, fashion, real estate
-- **X (Twitter)** — SaaS, tech founders, coaches (very active)
-
-Each platform includes:
-- Direct search links pre-filled with your niche + country
-- AI-generated lead profiles with platform handles & activity
-- Platform-specific outreach scripts (DM sequences, connection notes)
-- "Use in Full Workflow" button — instantly load leads into the pipeline
-
-### 🚀 Full Automated Workflow
-5-stage pipeline that runs with one click:
-1. **🔍 Lead Research** — Finds 5 qualified prospects (or uses pre-loaded social leads)
-2. **✉️ Outreach Email** — Personalized cold email with subject line
-3. **🔁 Follow-Up Sequence** — 3-email sequence: Day 3, Day 7, Day 14
-4. **📄 Proposal** — Full professional proposal with pricing
-5. **📅 Meeting** — Booking message + Google Calendar link
-
-### 👥 Per-Lead Actions
-For each individual lead, generate:
-- **Cold Email** — Personalized outreach
-- **Social DM** — Platform-specific direct message
-- **Proposal** — Custom proposal
-- **Meeting Request** — With Google Calendar integration
-
-### 📊 Google Sheets Sync
-Auto-saves all data across 3 tabs:
-- **Leads** — All prospect data including source platform
-- **Workflows** — Stage-by-stage results
-- **Actions** — Individual emails, DMs, proposals generated
+Built with React + Vite + Supabase + Stripe + Claude AI.
 
 ---
 
-## 📋 Tab Structure
+## 🗂 Table of Contents
+1. [Features](#features)
+2. [Tech Stack](#tech-stack)
+3. [Quick Start](#quick-start)
+4. [Supabase Setup](#supabase-setup)
+5. [Stripe Setup](#stripe-setup)
+6. [Environment Variables](#environment-variables)
+7. [Subscription Plans](#subscription-plans)
+8. [Deployment](#deployment)
+9. [Database Schema](#database-schema)
+10. [File Structure](#file-structure)
 
-| Tab | Purpose |
+---
+
+## ✅ Features
+
+### 🔍 Lead Acquisition
+| Tab | Feature |
 |-----|---------|
-| ⚙️ Setup | Configure niche, service, country, pricing, your info |
-| 🔍 Find Leads | LinkedIn / Instagram / X lead discovery + outreach scripts |
-| 🚀 Workflow | Run full 5-stage automated pipeline |
-| 👥 Leads | Per-lead email/DM/proposal/meeting generator |
-| 📅 Meetings | Google Calendar meeting scheduler |
-| 📊 Data Store | Google Sheets sync + lead source breakdown |
+| 📥 Real Leads | Hunter.io, Apollo.io, Google Places, CSV import |
+| 🔍 Social | LinkedIn, Instagram, X (Twitter) — AI outreach scripts |
+| 🚀 Workflow | 5-stage auto pipeline: Lead → Email → Follow-up → Proposal → Meeting |
+| 📧 Send Emails | Gmail OAuth send with approval |
+
+### 👥 CRM & Pipeline
+| Feature | Details |
+|---------|---------|
+| Kanban Board | 7 stages: New → Contacted → Replied → Meeting Booked → Proposal Sent → Won/Lost |
+| Reminders | Set follow-up reminders per lead with overdue alerts |
+| Activity Log | Every action auto-logged with timestamp |
+| Notes | Per-lead notes saved locally |
+| Search & Filter | Search by name/email, filter by stage, sort by date/reminder |
+
+### 📁 Content Generation
+| Tab | What's Generated |
+|-----|-----------------|
+| Portfolio | Case study doc, HTML portfolio page, outreach email, LinkedIn post |
+| Freelance | Upwork/Fiverr proposals, gig listings, profile optimizer |
+
+### 🗂️ Project Manager
+| Feature | Details |
+|---------|---------|
+| Projects | Create/manage client projects with budget, deadline, status |
+| Tasks | Add manually or AI-generate full task breakdown |
+| Invoices | Create → Send → Mark Paid, download HTML invoice |
+| Time Log | Track hours per category with breakdown chart |
+| Progress Ring | Visual SVG completion percentage per project |
+
+### 🔐 Auth & Subscriptions
+| Feature | Details |
+|---------|---------|
+| Email/Password | Sign up, sign in, password reset |
+| Google OAuth | One-click Google sign in |
+| Subscription Gate | Free / Monthly / Yearly / Lifetime plans |
+| Stripe Payments | Secure checkout, billing portal |
+| Supabase RLS | Row-level security — users only see their own data |
 
 ---
 
-## 🛠️ Tech Stack
-- **Frontend:** React 18 + Vite
-- **AI:** Claude Sonnet (claude-sonnet-4-5) via Anthropic API
-- **Deployment:** Vercel
-- **Data:** Google Sheets API v4
-- **Calendar:** Google Calendar deep links
+## 🛠 Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 18 + Vite |
+| Auth + DB | Supabase (PostgreSQL + Auth) |
+| Payments | Stripe Checkout |
+| AI | Claude Sonnet (Anthropic API) |
+| Email | Gmail API (OAuth) |
+| Lead APIs | Hunter.io, Apollo.io, Google Places |
+| Data Sync | Google Sheets API |
+| Deployment | Vercel |
 
 ---
 
-## ⚙️ Setup
+## 🚀 Quick Start
 
 ```bash
+# 1. Clone the repo
+git clone https://github.com/dev-nayanray/clientflow.git
+cd clientflow
+
+# 2. Install dependencies
 npm install
+
+# 3. Set up environment variables
+cp .env.example .env
+# Fill in your values (see below)
+
+# 4. Run database migrations
+# Copy supabase/schema.sql → Supabase SQL Editor → Run
+
+# 5. Start development server
 npm run dev
 ```
 
-Add your **Anthropic API key** in the app header (session-only, never stored).
+---
+
+## 🗄️ Supabase Setup
+
+### Step 1 — Create a project
+1. Go to [supabase.com](https://supabase.com) → **New Project**
+2. Choose a name, region, and password
+3. Wait ~2 minutes for project to start
+
+### Step 2 — Run the schema
+1. Open **SQL Editor** in your Supabase dashboard
+2. Click **New Query**
+3. Paste the contents of `supabase/schema.sql`
+4. Click **Run** (Ctrl+Enter)
+
+This creates:
+- `profiles` table — user data, auto-created on signup
+- `subscriptions` table — plan, status, expiry
+- `leads` table — optional cloud sync
+- `projects` table — optional cloud sync
+- Row Level Security policies on all tables
+- Trigger to auto-create profile on user signup
+
+### Step 3 — Get your API keys
+1. Go to **Settings → API**
+2. Copy **Project URL** → `VITE_SUPABASE_URL`
+3. Copy **anon/public key** → `VITE_SUPABASE_ANON`
+
+### Step 4 — Enable Google OAuth (optional)
+1. Go to **Authentication → Providers → Google**
+2. Enable it and add your Google OAuth credentials
+3. Add `https://YOUR_PROJECT.supabase.co/auth/v1/callback` as an authorized redirect URI in Google Console
 
 ---
 
-## 🔄 Recommended Workflow
+## 💳 Stripe Setup
 
-```
-1. ⚙️ Setup → Fill niche, service, country, your info
-2. 🔍 Find Leads → Choose LinkedIn/Instagram/X → Generate leads
-3. Click "Use in Full Workflow" → Leads auto-loaded
-4. 🚀 Workflow → Click "Run Full Workflow" (uses your social leads)
-5. 👥 Leads → Generate per-lead DMs, emails, proposals
-6. 📅 Meetings → Schedule discovery calls
-7. 📊 Data Store → Export everything to Google Sheets
-```
+### Step 1 — Create a Stripe account
+Go to [dashboard.stripe.com](https://dashboard.stripe.com)
+
+### Step 2 — Create 3 products
+
+Go to **Products → Add Product**:
+
+| Product Name | Price | Billing |
+|---|---|---|
+| ClientFlow Monthly | $1.00 | Recurring / Monthly |
+| ClientFlow Yearly | $10.00 | Recurring / Yearly |
+| ClientFlow Lifetime | $50.00 | One-time payment |
+
+After creating each product, copy its **Price ID** (starts with `price_`)
+
+### Step 3 — Get your publishable key
+Go to **Developers → API Keys** → copy **Publishable key** (starts with `pk_live_`)
+
+### Step 4 — Set up Billing Portal (for subscription management)
+1. Go to **Settings → Customer Portal**
+2. Enable it and save
+3. Copy the portal URL → update `ManageSubscription` in `src/Subscription.jsx`
+
+### Step 5 — Set up Webhook (for production)
+1. Go to **Developers → Webhooks → Add Endpoint**
+2. URL: `https://YOUR_PROJECT.supabase.co/functions/v1/stripe-webhook`
+3. Events to listen: `checkout.session.completed`, `customer.subscription.deleted`
 
 ---
 
-## 📦 Deploy to Vercel
+## 🔑 Environment Variables
+
+Copy `.env.example` to `.env` and fill in:
+
+```env
+# Supabase
+VITE_SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
+VITE_SUPABASE_ANON=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+# Stripe
+VITE_STRIPE_PK=pk_live_...
+VITE_STRIPE_MONTHLY=price_...
+VITE_STRIPE_YEARLY=price_...
+VITE_STRIPE_LIFETIME=price_...
+```
+
+> ⚠️ **Never commit `.env` to git.** It's already in `.gitignore`.
+
+---
+
+## 💰 Subscription Plans
+
+| Plan | Price | Billing | Features |
+|------|-------|---------|---------|
+| **Free** | $0 | — | Limited access |
+| **Monthly** | $1/month | Monthly | Full access, cancel anytime |
+| **Yearly** | $10/year | Yearly | Full access + priority support |
+| **Lifetime** | $50 once | One-time | Full access forever + all future updates |
+
+### How it works
+1. User signs up → gets Free plan
+2. Clicks "Upgrade" → redirected to Stripe Checkout
+3. Payment succeeds → Stripe redirects back with `?payment=success&plan=monthly`
+4. App writes subscription to Supabase
+5. `isSubscriptionActive()` gates premium features
+
+---
+
+## 🚢 Deployment
+
+### Vercel (recommended)
 
 ```bash
 npm run build
 # Deploy dist/ to Vercel
+# OR connect GitHub repo for auto-deploy
 ```
 
-Or connect your GitHub repo to Vercel for auto-deploy.
+Add environment variables in **Vercel Dashboard → Settings → Environment Variables** — add all `VITE_*` values.
+
+### Required Vercel settings
+- Framework: **Vite**
+- Build command: `npm run build`
+- Output directory: `dist`
+- Node version: 18+
+
+---
+
+## 🗃️ Database Schema
+
+```
+auth.users (Supabase managed)
+    │
+    ├── profiles          (1:1 — user preferences, auto-created on signup)
+    ├── subscriptions     (1:many — plan history, RLS protected)
+    ├── leads             (1:many — optional cloud sync)
+    └── projects          (1:many — optional cloud sync)
+```
+
+---
+
+## 📁 File Structure
+
+```
+clientflow/
+├── src/
+│   ├── App.jsx              # Main app — all tabs and auth wrapper
+│   ├── Auth.jsx             # Login / signup / reset password UI
+│   ├── Subscription.jsx     # Pricing page, feature gate, manage subscription
+│   ├── supabase.js          # Supabase client + auth/profile/subscription helpers
+│   ├── RealLeadFinder.jsx   # Hunter.io, Apollo.io, Google Places, CSV parser
+│   ├── GmailSender.jsx      # Gmail OAuth integration
+│   ├── index.css            # All styles
+│   └── main.jsx             # React entry point
+├── supabase/
+│   └── schema.sql           # Database schema + RLS policies
+├── .env.example             # Environment variable template
+├── .gitignore
+├── package.json
+├── vite.config.js
+└── README.md
+```
+
+---
+
+## 🆘 Support
+
+- **Email:** support@clientflow.ai
+- **GitHub Issues:** [github.com/dev-nayanray/clientflow/issues](https://github.com/dev-nayanray/clientflow/issues)
+
+---
+
+## 📄 License
+
+MIT License — free to use and modify. Commercial use requires an active subscription.
