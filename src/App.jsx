@@ -8,6 +8,12 @@ import {
   getGmailToken, setGmailToken, clearGmailToken,
   getGmailProfile, parseEmailText
 } from "./GmailSender";
+import {
+  supabase, signOut, getProfile,
+  getSubscription, isSubscriptionActive, getPlanLabel, getPlanColor
+} from "./supabase";
+import AuthPage from "./Auth";
+import { PricingPage, SubBanner, ManageSubscription } from "./Subscription";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const MODEL = "claude-sonnet-4-5";
