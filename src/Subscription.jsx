@@ -1,7 +1,7 @@
 // src/Subscription.jsx
 // ── Subscription / Pricing System ─────────────────────────────────────────────
 import { useState } from "react";
-import { loadStripe } from "@stripe/stripe-js";
+// Stripe loaded lazily — app works without it
 import { createSubscription, isSubscriptionActive, getPlanLabel, getPlanColor } from "./supabase";
 
 // ── Stripe config ─────────────────────────────────────────────────────────────
@@ -80,8 +80,15 @@ const PLANS = [
 
 // ── Stripe Checkout ────────────────────────────────────────────────────────────
 async function startCheckout(planKey, userId, userEmail) {
+  let loadStripe;
+  try {
+    const stripeModule = await import("@stripe/stripe-js");
+    loadStripe = stripeModule.loadStripe;
+  } catch {
+    throw new Error("Stripe not installed. Run: npm install @stripe/stripe-js");
+  }
   const stripe = await loadStripe(STRIPE_PK);
-  if (!stripe) throw new Error("Stripe failed to load.");
+  if (!stripe) throw new Error("Stripe failed to load. Check your VITE_STRIPE_PK key.");
 
   const { error } = await stripe.redirectToCheckout({
     lineItems: [{ price: STRIPE_PRICES[planKey], quantity: 1 }],
