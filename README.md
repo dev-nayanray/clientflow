@@ -1,275 +1,119 @@
-# ⚡ ClientFlow AI — Complete Client Acquisition & Project Management System
+# ⚡ ClientFlow AI v3.0
 
-> **The full workflow:** Find Real Leads → AI Email → Follow Up → Book Meeting → Send Proposal → Manage Project → Invoice Client
+> Complete client acquisition & project management system — Find leads → AI outreach → CRM → Invoice clients
 
-Built with React + Vite + Supabase + Stripe + Claude AI.
-
----
-
-## 🗂 Table of Contents
-1. [Features](#features)
-2. [Tech Stack](#tech-stack)
-3. [Quick Start](#quick-start)
-4. [Supabase Setup](#supabase-setup)
-5. [Stripe Setup](#stripe-setup)
-6. [Environment Variables](#environment-variables)
-7. [Subscription Plans](#subscription-plans)
-8. [Deployment](#deployment)
-9. [Database Schema](#database-schema)
-10. [File Structure](#file-structure)
+**Live:** https://clientflow.vercel.app
 
 ---
 
-## ✅ Features
+## 🚀 Quick Setup (15 minutes)
 
-### 🔍 Lead Acquisition
-| Tab | Feature |
-|-----|---------|
-| 📥 Real Leads | Hunter.io, Apollo.io, Google Places, CSV import |
-| 🔍 Social | LinkedIn, Instagram, X (Twitter) — AI outreach scripts |
-| 🚀 Workflow | 5-stage auto pipeline: Lead → Email → Follow-up → Proposal → Meeting |
-| 📧 Send Emails | Gmail OAuth send with approval |
-
-### 👥 CRM & Pipeline
-| Feature | Details |
-|---------|---------|
-| Kanban Board | 7 stages: New → Contacted → Replied → Meeting Booked → Proposal Sent → Won/Lost |
-| Reminders | Set follow-up reminders per lead with overdue alerts |
-| Activity Log | Every action auto-logged with timestamp |
-| Notes | Per-lead notes saved locally |
-| Search & Filter | Search by name/email, filter by stage, sort by date/reminder |
-
-### 📁 Content Generation
-| Tab | What's Generated |
-|-----|-----------------|
-| Portfolio | Case study doc, HTML portfolio page, outreach email, LinkedIn post |
-| Freelance | Upwork/Fiverr proposals, gig listings, profile optimizer |
-
-### 🗂️ Project Manager
-| Feature | Details |
-|---------|---------|
-| Projects | Create/manage client projects with budget, deadline, status |
-| Tasks | Add manually or AI-generate full task breakdown |
-| Invoices | Create → Send → Mark Paid, download HTML invoice |
-| Time Log | Track hours per category with breakdown chart |
-| Progress Ring | Visual SVG completion percentage per project |
-
-### 🔐 Auth & Subscriptions
-| Feature | Details |
-|---------|---------|
-| Email/Password | Sign up, sign in, password reset |
-| Google OAuth | One-click Google sign in |
-| Subscription Gate | Free / Monthly / Yearly / Lifetime plans |
-| Stripe Payments | Secure checkout, billing portal |
-| Supabase RLS | Row-level security — users only see their own data |
-
----
-
-## 🛠 Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React 18 + Vite |
-| Auth + DB | Supabase (PostgreSQL + Auth) |
-| Payments | Stripe Checkout |
-| AI | Claude Sonnet (Anthropic API) |
-| Email | Gmail API (OAuth) |
-| Lead APIs | Hunter.io, Apollo.io, Google Places |
-| Data Sync | Google Sheets API |
-| Deployment | Vercel |
-
----
-
-## 🚀 Quick Start
-
+### Step 1 — Install & Run
 ```bash
-# 1. Clone the repo
 git clone https://github.com/dev-nayanray/clientflow.git
 cd clientflow
-
-# 2. Install dependencies
 npm install
-
-# 3. Set up environment variables
-cp .env.example .env
-# Fill in your values (see below)
-
-# 4. Run database migrations
-# Copy supabase/schema.sql → Supabase SQL Editor → Run
-
-# 5. Start development server
 npm run dev
 ```
 
----
+### Step 2 — Supabase Setup
+1. Create project at [supabase.com](https://supabase.com)
+2. **SQL Editor** → paste `supabase/schema.sql` → **Run**
+3. **Authentication → Settings → Disable** "Enable email confirmations" *(for easier testing)*
+4. **Settings → API** → copy URL + anon/publishable key
 
-## 🗄️ Supabase Setup
-
-### Step 1 — Create a project
-1. Go to [supabase.com](https://supabase.com) → **New Project**
-2. Choose a name, region, and password
-3. Wait ~2 minutes for project to start
-
-### Step 2 — Run the schema
-1. Open **SQL Editor** in your Supabase dashboard
-2. Click **New Query**
-3. Paste the contents of `supabase/schema.sql`
-4. Click **Run** (Ctrl+Enter)
-
-This creates:
-- `profiles` table — user data, auto-created on signup
-- `subscriptions` table — plan, status, expiry
-- `leads` table — optional cloud sync
-- `projects` table — optional cloud sync
-- Row Level Security policies on all tables
-- Trigger to auto-create profile on user signup
-
-### Step 3 — Get your API keys
-1. Go to **Settings → API**
-2. Copy **Project URL** → `VITE_SUPABASE_URL`
-3. Copy **anon/public key** → `VITE_SUPABASE_ANON`
-
-### Step 4 — Enable Google OAuth (optional)
-1. Go to **Authentication → Providers → Google**
-2. Enable it and add your Google OAuth credentials
-3. Add `https://YOUR_PROJECT.supabase.co/auth/v1/callback` as an authorized redirect URI in Google Console
-
----
-
-## 💳 Stripe Setup
-
-### Step 1 — Create a Stripe account
-Go to [dashboard.stripe.com](https://dashboard.stripe.com)
-
-### Step 2 — Create 3 products
-
-Go to **Products → Add Product**:
-
-| Product Name | Price | Billing |
-|---|---|---|
-| ClientFlow Monthly | $1.00 | Recurring / Monthly |
-| ClientFlow Yearly | $10.00 | Recurring / Yearly |
-| ClientFlow Lifetime | $50.00 | One-time payment |
-
-After creating each product, copy its **Price ID** (starts with `price_`)
-
-### Step 3 — Get your publishable key
-Go to **Developers → API Keys** → copy **Publishable key** (starts with `pk_live_`)
-
-### Step 4 — Set up Billing Portal (for subscription management)
-1. Go to **Settings → Customer Portal**
-2. Enable it and save
-3. Copy the portal URL → update `ManageSubscription` in `src/Subscription.jsx`
-
-### Step 5 — Set up Webhook (for production)
-1. Go to **Developers → Webhooks → Add Endpoint**
-2. URL: `https://YOUR_PROJECT.supabase.co/functions/v1/stripe-webhook`
-3. Events to listen: `checkout.session.completed`, `customer.subscription.deleted`
-
----
-
-## 🔑 Environment Variables
-
-Copy `.env.example` to `.env` and fill in:
-
+### Step 3 — Environment Variables
+Create `.env.local`:
 ```env
-# Supabase
-VITE_SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
-VITE_SUPABASE_ANON=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+VITE_SUPABASE_ANON=your_publishable_key
 
-# Stripe
+# Stripe (optional — app works without it)
 VITE_STRIPE_PK=pk_live_...
 VITE_STRIPE_MONTHLY=price_...
 VITE_STRIPE_YEARLY=price_...
 VITE_STRIPE_LIFETIME=price_...
 ```
 
-> ⚠️ **Never commit `.env` to git.** It's already in `.gitignore`.
+### Step 4 — Set yourself as Super Admin
+After first signup, run in Supabase SQL Editor:
+```sql
+UPDATE public.profiles SET role = 'superadmin' WHERE email = 'your@email.com';
+```
+
+### Step 5 — Deploy to Vercel
+1. Connect GitHub repo to Vercel
+2. Add env vars in **Vercel → Settings → Environment Variables**
+3. Deploy — auto-deploys on every push to main
+
+---
+
+## 📋 Features
+
+| Module | Features |
+|--------|---------|
+| 🌐 **Landing Page** | Marketing page, pricing, testimonials, app preview |
+| 🔐 **Auth** | Email/password, Google OAuth, password reset, demo mode |
+| 📥 **Real Leads** | Hunter.io, Apollo.io, Google Places, CSV import |
+| 🔍 **Social** | LinkedIn, Instagram, X outreach scripts |
+| 🚀 **Workflow** | 5-stage auto pipeline (lead→email→followup→proposal→meeting) |
+| 📧 **Send Emails** | Gmail OAuth send with approval |
+| 👥 **CRM Pipeline** | Kanban, reminders, activity log, notes |
+| 📁 **Portfolio** | Case study, HTML page, LinkedIn post, outreach email |
+| 🎯 **Freelance** | Upwork/Fiverr proposals, gig creator, profile optimizer |
+| 🗂️ **Projects** | Tasks, AI task gen, invoices, time tracking |
+| 💰 **Subscriptions** | $1/mo · $10/yr · $50 lifetime via Stripe |
+| 👑 **Super Admin** | Users, subscriptions, revenue dashboard, role management |
 
 ---
 
 ## 💰 Subscription Plans
 
-| Plan | Price | Billing | Features |
-|------|-------|---------|---------|
-| **Free** | $0 | — | Limited access |
-| **Monthly** | $1/month | Monthly | Full access, cancel anytime |
-| **Yearly** | $10/year | Yearly | Full access + priority support |
-| **Lifetime** | $50 once | One-time | Full access forever + all future updates |
+| Plan | Price | Billing |
+|------|-------|---------|
+| Monthly | $1/month | Recurring |
+| Yearly | $10/year | Recurring |
+| Lifetime | $50 | One-time |
 
-### How it works
-1. User signs up → gets Free plan
-2. Clicks "Upgrade" → redirected to Stripe Checkout
-3. Payment succeeds → Stripe redirects back with `?payment=success&plan=monthly`
-4. App writes subscription to Supabase
-5. `isSubscriptionActive()` gates premium features
+**To activate Stripe payments:**
+1. Create 3 products in [Stripe Dashboard](https://dashboard.stripe.com/products)
+2. Copy Price IDs → add to `.env.local`
+3. Without Stripe: clicking "Buy" shows a test activation dialog
 
 ---
 
-## 🚢 Deployment
+## 🗄️ Database Tables
 
-### Vercel (recommended)
-
-```bash
-npm run build
-# Deploy dist/ to Vercel
-# OR connect GitHub repo for auto-deploy
-```
-
-Add environment variables in **Vercel Dashboard → Settings → Environment Variables** — add all `VITE_*` values.
-
-### Required Vercel settings
-- Framework: **Vite**
-- Build command: `npm run build`
-- Output directory: `dist`
-- Node version: 18+
-
----
-
-## 🗃️ Database Schema
-
-```
-auth.users (Supabase managed)
-    │
-    ├── profiles          (1:1 — user preferences, auto-created on signup)
-    ├── subscriptions     (1:many — plan history, RLS protected)
-    ├── leads             (1:many — optional cloud sync)
-    └── projects          (1:many — optional cloud sync)
-```
+| Table | Purpose |
+|-------|---------|
+| `profiles` | User data + role (user/admin/superadmin) |
+| `subscriptions` | Plan, status, expiry, Stripe IDs |
+| `leads` | Cloud-synced lead data |
+| `projects` | Cloud-synced project data |
+| `usage_events` | Feature analytics |
 
 ---
 
 ## 📁 File Structure
 
 ```
-clientflow/
-├── src/
-│   ├── App.jsx              # Main app — all tabs and auth wrapper
-│   ├── Auth.jsx             # Login / signup / reset password UI
-│   ├── Subscription.jsx     # Pricing page, feature gate, manage subscription
-│   ├── supabase.js          # Supabase client + auth/profile/subscription helpers
-│   ├── RealLeadFinder.jsx   # Hunter.io, Apollo.io, Google Places, CSV parser
-│   ├── GmailSender.jsx      # Gmail OAuth integration
-│   ├── index.css            # All styles
-│   └── main.jsx             # React entry point
-├── supabase/
-│   └── schema.sql           # Database schema + RLS policies
-├── .env.example             # Environment variable template
-├── .gitignore
-├── package.json
-├── vite.config.js
-└── README.md
+src/
+├── App.jsx           # Main app (3000+ lines — all tabs)
+├── Auth.jsx          # Landing page + login/signup
+├── AdminPanel.jsx    # Super admin dashboard
+├── Subscription.jsx  # Pricing page + Stripe
+├── supabase.js       # Supabase client + helpers
+├── RealLeadFinder.jsx # Hunter/Apollo/Places/CSV
+├── GmailSender.jsx   # Gmail OAuth
+└── index.css         # All styles (120KB)
+
+supabase/
+├── schema.sql        # DB schema + RLS + admin functions
+└── functions/
+    └── stripe-webhook/index.ts  # Stripe webhook handler
 ```
 
 ---
 
-## 🆘 Support
-
-- **Email:** support@clientflow.ai
-- **GitHub Issues:** [github.com/dev-nayanray/clientflow/issues](https://github.com/dev-nayanray/clientflow/issues)
-
----
-
-## 📄 License
-
-MIT License — free to use and modify. Commercial use requires an active subscription.
+## 🔑 Supabase Note
+This project uses the new `sb_publishable_` key format — it works identically to the old `eyJ...` anon key. Both work with `@supabase/supabase-js`. Do NOT use `@supabase/ssr` — that's for Next.js only.
