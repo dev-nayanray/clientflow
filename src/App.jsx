@@ -14,6 +14,7 @@ import {
 } from "./supabase";
 import AuthPage from "./Auth";
 import { PricingPage, SubBanner, ManageSubscription } from "./Subscription";
+import AdminPanel from "./AdminPanel";
 import SetupWizard from "./SetupWizard";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -117,7 +118,7 @@ async function logSentEmail(sc,{to,subject,lead,cfg}){
 }
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
-const TABS=["⚙️ Setup","📥 Real Leads","🔍 Social","🚀 Workflow","📧 Send Emails","👥 Pipeline","📅 Meetings","📁 Portfolio","🎯 Freelance","🗂️ Projects","📊 Data Store"];
+const TABS=["⚙️ Setup","📥 Real Leads","🔍 Social","🚀 Workflow","📧 Send Emails","👥 Pipeline","📅 Meetings","📁 Portfolio","🎯 Freelance","🗂️ Projects","📊 Data Store","👑 Admin"];
 const DEFAULT_CONFIG={niche:"E-commerce Stores",service:"Web Design & Development",country:"United States",price:"$500 – $2,000",calendlyLink:"",yourName:"",yourEmail:"",companyName:"",googleClientId:""};
 const DEFAULT_SHEETS={apiKey:"",sheetId:"",enabled:false};
 const DEFAULT_API_KEYS={hunter:"",apollo:"",places:""};
@@ -2969,17 +2970,22 @@ export default function App(){
   }
 
   async function loadUserData(u){
+    if (u?.id === "demo") {
+      // Demo mode - skip Supabase
+      setProfile({ id:"demo", full_name:"Demo User", role:"user" });
+      setSubscription({ plan:"lifetime", status:"active", expires_at:null });
+      return;
+    }
     try{
       const[prof,sub]=await Promise.all([getProfile(u.id),getSubscription(u.id)]);
       setProfile(prof);
       setSubscription(sub);
-      // Auto-populate config from profile
       if(prof?.full_name&&!config.yourName){ setConfig(c=>({...c,yourName:prof.full_name})); }
     }catch(e){ console.warn("loadUserData error:",e.message); }
   }
 
   async function handleSignOut(){
-    await signOut();
+    if (user?.id !== "demo") await signOut();
     setSession(null); setUser(null); setProfile(null); setSubscription(null);
   }
 
@@ -2989,6 +2995,8 @@ export default function App(){
   }
 
   const isActive = isSubscriptionActive(subscription);
+  const isSuperAdmin = profile?.role === "superadmin" || profile?.role === "admin";
+  const isDemoMode   = user?.id === "demo";
 
   useEffect(()=>{if(apiKey)sessionStorage.setItem("cf_key",apiKey);},[apiKey]);
   useEffect(()=>{localStorage.setItem("cf_config",JSON.stringify(config));},[config]);
@@ -3038,6 +3046,7 @@ export default function App(){
   );
 
   return(<div className="app">
+    <ToastContainer/>
     <header className="header">
       <div className="header-top">
         <div className="logo">
@@ -3053,9 +3062,15 @@ export default function App(){
         </div>
       </div>
       <ApiKeyBanner apiKey={apiKey} setApiKey={setApiKey}/>
-      <nav className="tabs">
-        {TABS.map((t,i)=><button key={i} className={`tab ${tab===i?"active":""}`} onClick={()=>setTab(i)}>{t}</button>)}
+      {/* Desktop tabs */}
+      <nav className="tabs desktop-tabs">
+        {TABS.filter((_,i)=>!(i===11&&!isSuperAdmin)).map((t,i)=>{
+          const realI = (i===11&&isSuperAdmin) ? 11 : i;
+          return <button key={i} className={`tab ${tab===i?"active":""}`} onClick={()=>setTab(i)}>{t}</button>;
+        })}
       </nav>
+      {/* Mobile dropdown nav */}
+      <MobileNav tabs={TABS.filter((_,i)=>!(i===11&&!isSuperAdmin))} activeTab={tab} onTabChange={setTab}/>
     </header>
     <main className="main">
       {tab===0&&<SetupTab config={config} setConfig={setConfig} sheetsConfig={sheetsConfig} setSheetsConfig={setSheetsConfig} apiKeys={apiKeys} setApiKeys={setApiKeys}/>}
@@ -3069,6 +3084,8 @@ export default function App(){
       {tab===8&&<FreelanceTab apiKey={apiKey} config={config}/>}
       {tab===9&&<ProjectManagerTab config={config} apiKey={apiKey} stages={stages}/>}
       {tab===10&&<DataStoreTab sheetsConfig={sheetsConfig} setSheetsConfig={setSheetsConfig} stages={stages} config={config}/>}
+      {tab===11&&isSuperAdmin&&<AdminPanel currentUser={user}/>}
+      {tab===11&&!isSuperAdmin&&<div className="feature-gate"><div className="feature-gate-icon">🔒</div><h3>Admin Only</h3><p>You don't have permission to view this page.</p></div>}
     </main>
   </div>);
 }
