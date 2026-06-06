@@ -15,6 +15,7 @@ import {
 import AuthPage from "./Auth";
 import { PricingPage, SubBanner, ManageSubscription } from "./Subscription";
 import AdminPanel from "./AdminPanel";
+import UserProfile from "./UserProfile";
 import SetupWizard from "./SetupWizard";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -2901,6 +2902,7 @@ export default function App(){
   const [subscription, setSubscription] = useState(null);
   const [showPricing, setShowPricing] = useState(false);
   const [showManageSub, setShowManageSub] = useState(false);
+  const [showProfile, setShowProfile]     = useState(false);
   const [dbReady, setDbReady]         = useState(null); // null=checking, true=ready, false=needs setup
   const SUPABASE_URL = "https://ifdqoizimmoirkotbjmd.supabase.co";
 
@@ -2996,6 +2998,7 @@ export default function App(){
 
   const isActive = isSubscriptionActive(subscription);
   const isSuperAdmin = profile?.role === "superadmin" || profile?.role === "admin";
+  const [showProfile, setShowProfile] = useState(false);
   const isDemoMode   = user?.id === "demo";
 
   useEffect(()=>{if(apiKey)sessionStorage.setItem("cf_key",apiKey);},[apiKey]);
@@ -3047,6 +3050,12 @@ export default function App(){
 
   return(<div className="app">
     <ToastContainer/>
+    {showProfile&&<UserProfile
+      user={user} profile={profile} subscription={subscription}
+      onClose={()=>setShowProfile(false)}
+      onProfileUpdate={p=>{setProfile(p);setShowProfile(false);}}
+      onUpgrade={()=>{setShowProfile(false);setShowPricing(true);}}
+    />}
     <header className="header">
       <div className="header-top">
         <div className="logo">
@@ -3056,9 +3065,28 @@ export default function App(){
             <div className="logo-sub">Real Leads → Research → Email → Follow Up → Meeting → Proposal</div>
           </div>
         </div>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        <div style={{display:"flex",gap:8,alignItems:"center",marginLeft:"auto"}}>
           {gmailState.connected&&<div className="gmail-header-badge">📧 {gmailState.profile?.emailAddress}</div>}
           {sheetsConfig.enabled&&<div className="sheets-badge">📊 Sheets</div>}
+          {/* Subscription badge */}
+          {isActive?(
+            <button className="sub-active-badge" style={{background:getPlanColor(subscription.plan)+"22",color:getPlanColor(subscription.plan),borderColor:getPlanColor(subscription.plan)+"44",border:"1.5px solid",borderRadius:20,padding:"4px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}
+              onClick={()=>setShowProfile(true)}>
+              ⚡ {getPlanLabel(subscription.plan)}
+            </button>
+          ):(
+            <button className="sub-upgrade-btn" onClick={()=>setShowPricing(true)}>
+              🚀 Upgrade $1/mo
+            </button>
+          )}
+          {/* User avatar → opens profile */}
+          <button className="header-user-btn" onClick={()=>setShowProfile(true)} title="Edit Profile">
+            <div className="user-avatar">{(profile?.full_name||user?.user_metadata?.full_name||user?.email||"?")[0].toUpperCase()}</div>
+            <div className="user-info">
+              <div className="user-name">{profile?.full_name||user?.user_metadata?.full_name||user?.email?.split("@")[0]}</div>
+              <span className="user-signout-link" onClick={e=>{e.stopPropagation();handleSignOut();}}>Sign out</span>
+            </div>
+          </button>
         </div>
       </div>
       <ApiKeyBanner apiKey={apiKey} setApiKey={setApiKey}/>
