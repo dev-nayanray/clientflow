@@ -2942,8 +2942,7 @@ export default function App(){
       }
       window.history.replaceState({},"",window.location.pathname);
     }
-    // Check if DB tables exist (schema has been run)
-    checkDbReady();
+    // DB check removed — schema assumed ready, SetupWizard removed
     return()=>authSub.unsubscribe();
   },[]);
 
@@ -2998,8 +2997,73 @@ export default function App(){
 
   const isActive = isSubscriptionActive(subscription);
   const isSuperAdmin = profile?.role === "superadmin" || profile?.role === "admin";
-  const [showProfile, setShowProfile] = useState(false);
-  const isDemoMode   = user?.id === "demo";
+  const [showProfile, setShowProfile]     = useState(false);
+  const isDemoMode                        = user?.id === "demo";
+
+  // ── Dark Mode ───────────────────────────────────────────────────────────────
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem("cf_dark") === "1");
+  useEffect(() => {
+    localStorage.setItem("cf_dark", darkMode ? "1" : "0");
+    document.body.classList.toggle("cf-dark", darkMode);
+  }, [darkMode]);
+
+  // ── Global Search ────────────────────────────────────────────────────────────
+  const [showSearch, setShowSearch]       = useState(false);
+  const [searchQuery, setSearchQuery]     = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  useEffect(() => {
+    if (!searchQuery.trim()) { setSearchResults([]); return; }
+    const q = searchQuery.toLowerCase();
+    const allLeads = Array.isArray(stages?.leads?.result) ? stages.leads.result : [];
+    const results = allLeads
+      .filter(l => (l.name + " " + (l.email||"") + " " + (l.contact||"")).toLowerCase().includes(q))
+      .slice(0, 8)
+      .map(l => ({ icon:"👤", title: l.name, sub: l.email||l.contact||"", action: () => { setTab(5); setShowSearch(false); setSearchQuery(""); } }));
+    setSearchResults(results);
+  }, [searchQuery, stages]);
+
+  // Ctrl+K shortcut
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") { e.preventDefault(); setShowSearch(s => !s); }
+      if (e.key === "Escape") { setShowSearch(false); setSearchQuery(""); }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  // ── CSV Export ───────────────────────────────────────────────────────────────
+  function exportLeadsCSV() {
+    const leads = Array.isArray(stages?.leads?.result) ? stages.leads.result : [];
+    if (!leads.length) { alert("No leads to export. Run the workflow first."); return; }
+    const headers = ["Name","Contact","Email","Website","Phone","Platform","Pain Point","Size","Verified"];
+    const rows    = [headers, ...leads.map(l => [l.name||"",l.contact||"",l.email||"",l.website||"",l.phone||"",l.platform||"",l.pain_point||"",l.size||"",l.verified?"Yes":"No"])];
+    const csv     = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const a = document.createElement("a");
+    a.href     = URL.createObjectURL(new Blob([csv], { type:"text/csv" }));
+    a.download = `leads-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    alert(`✅ ${leads.length} leads exported as CSV!`);
+  }
+
+  // ── Supabase Leads Sync ──────────────────────────────────────────────────────
+  async function syncLeadsToSupabase() {
+    const leads = Array.isArray(stages?.leads?.result) ? stages.leads.result : [];
+    if (!leads.length) { alert("No leads to sync. Run the workflow first."); return; }
+    if (!user || user.id === "demo") { alert("Please sign in to sync leads."); return; }
+    try {
+      const rows = leads.map(l => ({
+        user_id: user.id, name: l.name||"", contact: l.contact||"",
+        email: l.email||"", website: l.website||"", phone: l.phone||"",
+        platform: l.platform||"Direct", pain_point: l.pain_point||"",
+        size: l.size||"", verified: !!l.verified, status: "New",
+        updated_at: new Date().toISOString()
+      }));
+      const { error } = await supabase.from("leads").upsert(rows, { onConflict:"user_id,email" });
+      if (error) throw error;
+      alert(`✅ ${leads.length} leads synced to Supabase!`);
+    } catch(e) { alert("Sync failed: " + e.message); }
+  }
 
   useEffect(()=>{if(apiKey)sessionStorage.setItem("cf_key",apiKey);},[apiKey]);
   useEffect(()=>{localStorage.setItem("cf_config",JSON.stringify(config));},[config]);
@@ -3033,12 +3097,7 @@ export default function App(){
     </div>
   );
 
-  // First-time DB setup
-  if(dbReady===false) return(
-    <SetupWizard supabaseUrl={SUPABASE_URL} onComplete={()=>setDbReady(true)}/>
-  );
-
-  // Not logged in
+  // Not logged in → show landing page + auth
   if(!session) return <AuthPage onAuth={handleAuth}/>;
 
   // Pricing page
@@ -3066,6 +3125,39 @@ export default function App(){
           </div>
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center",marginLeft:"auto"}}>
+          {/* Global Search Overlay */}
+          {showSearch&&(
+            <div className="gsearch-overlay" onClick={()=>{setShowSearch(false);setSearchQuery("");}}>
+              <div className="gsearch-box" onClick={e=>e.stopPropagation()}>
+                <div className="gsearch-row">
+                  <span className="gsearch-icon-prefix">🔍</span>
+                  <input autoFocus className="gsearch-inp"
+                    placeholder="Search leads by name or email…"
+                    value={searchQuery} onChange={e=>setSearchQuery(e.target.value)}
+                    onKeyDown={e=>{ if(e.key==="Escape"){setShowSearch(false);setSearchQuery("");} }}/>
+                  {searchQuery&&<button className="gsearch-clear" onClick={()=>setSearchQuery("")}>✕</button>}
+                </div>
+                {searchResults.length>0&&(
+                  <div className="gsearch-results">
+                    {searchResults.map((r,i)=>(
+                      <div key={i} className="gsearch-item" onClick={r.action}>
+                        <span className="gsearch-item-icon">{r.icon}</span>
+                        <div><div className="gsearch-item-title">{r.title}</div><div className="gsearch-item-sub">{r.sub}</div></div>
+                        <span className="gsearch-item-type">Lead →</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {searchQuery&&!searchResults.length&&<div className="gsearch-empty">No results for "<b>{searchQuery}</b>"</div>}
+                <div className="gsearch-footer">Ctrl+K to toggle · Esc to close · searches leads</div>
+              </div>
+            </div>
+          )}
+          {/* Toolbar */}
+          <button className="hdr-tool-btn" title="Search leads (Ctrl+K)" onClick={()=>setShowSearch(s=>!s)}>🔍</button>
+          <button className="hdr-tool-btn" title="Export leads CSV" onClick={exportLeadsCSV}>📥</button>
+          <button className="hdr-tool-btn" title="Sync leads to Supabase" onClick={syncLeadsToSupabase}>☁️</button>
+          <button className="hdr-tool-btn" title="Toggle dark mode" onClick={()=>setDarkMode(d=>!d)}>{darkMode?"☀️":"🌙"}</button>
           {gmailState.connected&&<div className="gmail-header-badge">📧 {gmailState.profile?.emailAddress}</div>}
           {sheetsConfig.enabled&&<div className="sheets-badge">📊 Sheets</div>}
           {/* Subscription badge */}
