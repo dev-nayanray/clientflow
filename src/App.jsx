@@ -2892,6 +2892,66 @@ function DataStoreTab({sheetsConfig,setSheetsConfig,stages,config}){
   </div>);
 }
 
+// ── Toast System ──────────────────────────────────────────────────────────────
+let _toastAdd = null;
+export function showToast(msg, type = "success") { _toastAdd?.(msg, type); }
+
+function ToastContainer() {
+  const [toasts, setToasts] = useState([]);
+  useEffect(() => {
+    _toastAdd = (msg, type) => {
+      const id = Date.now() + Math.random();
+      setToasts(t => [...t, { id, msg, type }]);
+      setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3800);
+    };
+    return () => { _toastAdd = null; };
+  }, []);
+  if (!toasts.length) return null;
+  return (
+    <div className="toast-container">
+      {toasts.map(t => (
+        <div key={t.id} className={`toast-item toast-item--${t.type}`}>
+          <span className="toast-icon">{t.type === "success" ? "✅" : t.type === "error" ? "❌" : "ℹ️"}</span>
+          <span className="toast-msg">{t.msg}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Mobile Nav ────────────────────────────────────────────────────────────────
+function MobileNav({ tabs, activeTab, onTabChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const handler = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+  const currentTab = tabs[activeTab] || tabs[0];
+  return (
+    <div className="mobile-nav" ref={ref}>
+      <button className="mobile-nav-toggle" onClick={() => setOpen(o => !o)}>
+        <span className="mobile-nav-current">{currentTab}</span>
+        <span className="mobile-nav-arrow">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="mobile-nav-menu">
+          {tabs.map((t, i) => (
+            <button
+              key={i}
+              className={`mobile-nav-item ${activeTab === i ? "active" : ""}`}
+              onClick={() => { onTabChange(i); setOpen(false); }}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Root App ──────────────────────────────────────────────────────────────────
 export default function App(){
   // ── Auth & Subscription state ──────────────────────────────────────────────
@@ -2997,7 +3057,6 @@ export default function App(){
 
   const isActive = isSubscriptionActive(subscription);
   const isSuperAdmin = profile?.role === "superadmin" || profile?.role === "admin";
-  const [showProfile, setShowProfile]     = useState(false);
   const isDemoMode                        = user?.id === "demo";
 
   // ── Dark Mode ───────────────────────────────────────────────────────────────
@@ -3176,7 +3235,7 @@ export default function App(){
             <div className="user-avatar">{(profile?.full_name||user?.user_metadata?.full_name||user?.email||"?")[0].toUpperCase()}</div>
             <div className="user-info">
               <div className="user-name">{profile?.full_name||user?.user_metadata?.full_name||user?.email?.split("@")[0]}</div>
-              <span className="user-signout-link" onClick={e=>{e.stopPropagation();handleSignOut();}}>Sign out</span>
+              <span className="user-signout" onClick={e=>{e.stopPropagation();handleSignOut();}}>Sign out</span>
             </div>
           </button>
         </div>
