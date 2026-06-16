@@ -1884,6 +1884,171 @@ body.cf-dark .lead-card:hover { border-color:#6366f1; }
 .session-card{display:flex;align-items:center;gap:12px;background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:12px;padding:14px 16px;margin-bottom:4px;}
 
 /* ════════════════════════════════════════════════════════════════
+   DASHBOARD (SetupTab) — Modern redesign
+════════════════════════════════════════════════════════════════ */
+
+/* ── Wrap ────────────────────────────────────────────────────────────────────── */
+.dash-wrap { display: flex; flex-direction: column; gap: 20px; }
+
+/* ── Hero Banner ─────────────────────────────────────────────────────────────── */
+.dash-hero {
+  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%);
+  border-radius: 20px; padding: 28px 32px;
+  display: flex; align-items: center; justify-content: space-between; gap: 24px;
+  color: #fff; position: relative; overflow: hidden;
+}
+.dash-hero::before {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 80% 50%, rgba(139,92,246,.25) 0%, transparent 60%);
+  pointer-events: none;
+}
+.dash-hero-left { flex: 1; position: relative; z-index: 1; }
+.dash-hero-eyebrow {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px;
+  color: #a5b4fc; margin-bottom: 8px;
+}
+.dash-hero-title {
+  font-size: 26px; font-weight: 800; letter-spacing: -.5px; color: #fff;
+  margin-bottom: 8px; line-height: 1.2;
+}
+.dash-hero-sub { font-size: 14px; color: #c7d2fe; line-height: 1.6; margin-bottom: 18px; }
+
+.dash-quick-flow { display: flex; gap: 8px; flex-wrap: wrap; }
+.dash-quick-pill {
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.15);
+  border-radius: 20px; padding: 6px 14px; font-size: 12px; font-weight: 600;
+  color: #e0e7ff; transition: all .2s; cursor: default;
+  border-left: 3px solid var(--pill-color, #6366f1);
+}
+
+/* Progress ring */
+.dash-progress-ring-wrap {
+  position: relative; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  width: 88px; height: 88px; z-index: 1;
+}
+.dash-ring-svg { position: absolute; inset: 0; }
+.dash-ring-label { display: flex; flex-direction: column; align-items: center; }
+.dash-ring-pct { font-size: 20px; font-weight: 900; color: #fff; line-height: 1; }
+.dash-ring-txt  { font-size: 10px; color: #a5b4fc; font-weight: 600; margin-top: 2px; }
+
+/* ── Status Bar ──────────────────────────────────────────────────────────────── */
+.dash-status-bar {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  background: #fff; border: 1.5px solid #e2e8f0;
+  border-radius: 14px; padding: 12px 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.04);
+}
+.dash-status-item {
+  display: flex; align-items: center; gap: 5px;
+  background: #f8fafc; border: 1.5px solid #e2e8f0;
+  border-radius: 8px; padding: 6px 12px;
+  font-size: 12px; font-weight: 600; color: #94a3b8;
+  transition: all .2s;
+}
+.dash-status-item.ok {
+  background: #f0fdf4; border-color: #bbf7d0; color: #16a34a;
+}
+.dash-status-icon { font-size: 14px; }
+.dash-status-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
+
+/* ── Setup Grid ──────────────────────────────────────────────────────────────── */
+.dash-setup-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px;
+}
+
+/* ── Dash Card ───────────────────────────────────────────────────────────────── */
+.dash-card {
+  background: #fff; border-radius: 16px; padding: 20px;
+  border: 1.5px solid #e2e8f0;
+  box-shadow: 0 2px 8px rgba(0,0,0,.04);
+  transition: box-shadow .2s;
+}
+.dash-card:hover { box-shadow: 0 6px 20px rgba(0,0,0,.08); }
+
+.dash-card-head {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 18px;
+}
+.dash-card-icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0;
+}
+.dash-card-title { font-size: 15px; font-weight: 700; color: #0f172a; }
+.dash-card-sub   { font-size: 12px; color: #94a3b8; margin-top: 2px; }
+
+/* Completion badge */
+.dash-complete-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #f0fdf4; border: 1px solid #bbf7d0;
+  color: #16a34a; border-radius: 8px;
+  padding: 6px 12px; font-size: 12px; font-weight: 600; margin-top: 8px;
+}
+
+/* ── API Key Rows ────────────────────────────────────────────────────────────── */
+.dash-apikey-list { display: flex; flex-direction: column; gap: 14px; }
+.dash-apikey-row  { display: flex; flex-direction: column; gap: 5px; }
+.dash-apikey-meta { display: flex; align-items: center; justify-content: space-between; }
+.dash-apikey-name { font-size: 13px; font-weight: 700; color: #1e293b; }
+.dash-apikey-input {
+  width: 100%; border: 1.5px solid #e2e8f0; border-radius: 8px;
+  padding: 8px 12px; font-size: 13px; color: #1e293b; transition: border-color .2s;
+  background: #fafafa;
+}
+.dash-apikey-input:focus  { outline: none; border-color: #6366f1; background: #fff; }
+.dash-apikey-input.active { border-color: #bbf7d0; background: #f0fdf4; }
+.dash-apikey-ok   { font-size: 12px; color: #16a34a; font-weight: 600; }
+.dash-apikey-hint { font-size: 11px; color: #94a3b8; }
+
+/* ── Integrations Row ────────────────────────────────────────────────────────── */
+.dash-integrations-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+}
+.dash-integration-card { }
+
+.dash-int-badge {
+  margin-left: auto; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px;
+}
+.dash-int-badge.connected { background: #f0fdf4; border: 1px solid #bbf7d0; color: #16a34a; }
+
+.dash-int-off-msg { font-size: 13px; color: #64748b; line-height: 1.6; padding: 8px 0; }
+
+/* ── Steps List ──────────────────────────────────────────────────────────────── */
+.dash-steps { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.dash-step  { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; color: #475569; }
+.dash-step-num {
+  width: 22px; height: 22px; flex-shrink: 0;
+  background: linear-gradient(135deg,#6366f1,#8b5cf6);
+  color: #fff; border-radius: 50%; font-size: 11px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center; margin-top: 1px;
+}
+.dash-step-text { flex: 1; line-height: 1.5; }
+
+/* ── Sheets fields inside dash card ─────────────────────────────────────────── */
+.dash-sheets-fields { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
+
+/* ── Responsive ──────────────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .dash-integrations-row { grid-template-columns: 1fr; }
+  .dash-hero { flex-direction: column; align-items: flex-start; }
+  .dash-progress-ring-wrap { align-self: flex-start; }
+}
+@media (max-width: 640px) {
+  .dash-hero { padding: 20px; border-radius: 14px; }
+  .dash-hero-title { font-size: 20px; }
+  .dash-setup-grid { grid-template-columns: 1fr; }
+  .dash-status-bar { padding: 10px 12px; }
+}
+
+/* Dark mode */
+body.cf-dark .dash-card { background: #1e293b; border-color: #334155; }
+body.cf-dark .dash-card-title { color: #f1f5f9; }
+body.cf-dark .dash-apikey-input { background: #0f172a; border-color: #334155; color: #e2e8f0; }
+body.cf-dark .dash-status-bar { background: #1e293b; border-color: #334155; }
+body.cf-dark .dash-status-item { background: #0f172a; border-color: #334155; }
+body.cf-dark .dash-status-item.ok { background: #052e16; border-color: #166534; }
+
+/* ════════════════════════════════════════════════════════════════
    UI/UX MODERNIZATION — Header, Mobile Nav, Toast, Tab Polish
 ════════════════════════════════════════════════════════════════ */
 

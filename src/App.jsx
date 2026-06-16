@@ -225,81 +225,214 @@ function SendApprovalModal({draft,onConfirm,onCancel,sending,gmailProfile}){
 
 // ── Gmail Setup in Setup Tab ──────────────────────────────────────────────────
 function SetupTab({config,setConfig,sheetsConfig,setSheetsConfig,apiKeys,setApiKeys}){
-  const f=(key,label,ph,type="text")=>(<div className="field"><label>{label}</label>
-    <input type={type} placeholder={ph} value={config[key]||""} onChange={e=>setConfig(c=>({...c,[key]:e.target.value}))}/></div>);
-  return(<div className="setup-wrap">
-    <div className="setup-grid">
-      <div className="card">
-        <h3>🎯 Target Configuration</h3>
-        <SearchableDropdown label="Target Niche" icon="🏢" value={config.niche} onChange={v=>setConfig(c=>({...c,niche:v}))} options={NICHES} placeholder="Select niche…"/>
-        <SearchableDropdown label="Your Service" icon="🛠️" value={config.service} onChange={v=>setConfig(c=>({...c,service:v}))} options={SERVICES} placeholder="Select service…"/>
-        <CountrySelector value={config.country} onChange={v=>setConfig(c=>({...c,country:v}))} niche={config.niche}/>
-        {f("price","💵 Pricing Range","$500 – $2,000")}
+  const f=(key,label,ph,type="text",icon="")=>(
+    <div className="field">
+      <label>{icon&&<span style={{marginRight:4}}>{icon}</span>}{label}</label>
+      <input type={type} placeholder={ph} value={config[key]||""} onChange={e=>setConfig(c=>({...c,[key]:e.target.value}))}/>
+    </div>
+  );
+
+  // Calculate setup progress
+  const checks = [
+    !!config.niche, !!config.service, !!config.country,
+    !!config.yourName, !!config.yourEmail, !!config.companyName,
+    !!apiKeys.hunter || !!apiKeys.apollo || !!apiKeys.places,
+    !!config.googleClientId,
+  ];
+  const done = checks.filter(Boolean).length;
+  const pct  = Math.round((done / checks.length) * 100);
+
+  const quickFlow = [
+    {icon:"📥",label:"Find Leads",tab:"Real Leads",color:"#6366f1"},
+    {icon:"🚀",label:"Run Workflow",tab:"Workflow",color:"#8b5cf6"},
+    {icon:"📧",label:"Send Emails",tab:"Send Emails",color:"#0ea5e9"},
+    {icon:"👥",label:"CRM Pipeline",tab:"Pipeline",color:"#22c55e"},
+  ];
+
+  return(
+    <div className="dash-wrap">
+      {/* ── Hero banner ──────────────────────────────────────────────────── */}
+      <div className="dash-hero">
+        <div className="dash-hero-left">
+          <div className="dash-hero-eyebrow">ClientFlow AI</div>
+          <h1 className="dash-hero-title">
+            {config.yourName ? `Welcome back, ${config.yourName.split(" ")[0]}` : "Welcome to ClientFlow AI"}
+          </h1>
+          <p className="dash-hero-sub">
+            {config.niche && config.service
+              ? `Targeting ${config.niche} · ${config.service} · ${config.country||"Worldwide"}`
+              : "Complete setup below to start finding clients automatically."}
+          </p>
+          {/* Quick-action pills */}
+          <div className="dash-quick-flow">
+            {quickFlow.map(q=>(
+              <div key={q.tab} className="dash-quick-pill" style={{"--pill-color":q.color}}>
+                <span>{q.icon}</span><span>{q.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        {/* Setup progress ring */}
+        <div className="dash-progress-ring-wrap">
+          <svg className="dash-ring-svg" viewBox="0 0 88 88" width="88" height="88">
+            <circle cx="44" cy="44" r="36" fill="none" stroke="rgba(255,255,255,.12)" strokeWidth="8"/>
+            <circle cx="44" cy="44" r="36" fill="none" stroke="#a5b4fc" strokeWidth="8"
+              strokeDasharray={`${2*Math.PI*36}`}
+              strokeDashoffset={`${2*Math.PI*36*(1-pct/100)}`}
+              strokeLinecap="round"
+              style={{transform:"rotate(-90deg)",transformOrigin:"center",transition:"stroke-dashoffset .6s ease"}}/>
+          </svg>
+          <div className="dash-ring-label">
+            <span className="dash-ring-pct">{pct}%</span>
+            <span className="dash-ring-txt">Ready</span>
+          </div>
+        </div>
       </div>
-      <div className="card">
-        <h3>🏢 Your Business Info</h3>
-        {f("yourName","👤 Your Name","Rubel Ahmed")}
-        {f("yourEmail","📧 Your Email","you@example.com","email")}
-        {f("companyName","🏷️ Company Name","Rubel SBS")}
-        {f("calendlyLink","📅 Calendly Link","https://calendly.com/you")}
+
+      {/* ── Setup status bar ─────────────────────────────────────────────── */}
+      <div className="dash-status-bar">
+        {[
+          {label:"Niche",ok:!!config.niche,icon:"🏢"},
+          {label:"Service",ok:!!config.service,icon:"🛠️"},
+          {label:"Country",ok:!!config.country,icon:"🌍"},
+          {label:"Your Name",ok:!!config.yourName,icon:"👤"},
+          {label:"Email",ok:!!config.yourEmail,icon:"📧"},
+          {label:"API Keys",ok:!!(apiKeys.hunter||apiKeys.apollo||apiKeys.places),icon:"🔑"},
+          {label:"Gmail",ok:!!config.googleClientId,icon:"📬"},
+          {label:"Sheets",ok:!!sheetsConfig.enabled,icon:"📊"},
+        ].map(s=>(
+          <div key={s.label} className={`dash-status-item ${s.ok?"ok":""}`}>
+            <span className="dash-status-icon">{s.ok?"✅":s.icon}</span>
+            <span className="dash-status-label">{s.label}</span>
+          </div>
+        ))}
       </div>
-      <div className="card api-keys-card">
-        <h3>🔑 Lead Source API Keys</h3>
-        <p className="hint" style={{marginTop:0,marginBottom:12}}>Add to find <strong>real verified contacts</strong>.</p>
-        <div className="field">
-          <label>🎯 Hunter.io API Key <a href="https://hunter.io/api-keys" target="_blank" rel="noreferrer" className="get-key-link">Get free →</a></label>
-          <input type="password" placeholder="hunter_xxxxxxxxxxxx" value={apiKeys.hunter} onChange={e=>setApiKeys(k=>({...k,hunter:e.target.value}))}/>
-          <span className="field-hint">50 free/month • Real emails by domain or company</span>
+
+      {/* ── Main setup grid ──────────────────────────────────────────────── */}
+      <div className="dash-setup-grid">
+
+        {/* Target Config */}
+        <div className="dash-card">
+          <div className="dash-card-head">
+            <div className="dash-card-icon" style={{background:"#ede9fe",color:"#7c3aed"}}>🎯</div>
+            <div>
+              <div className="dash-card-title">Target Configuration</div>
+              <div className="dash-card-sub">Who you're selling to</div>
+            </div>
+          </div>
+          <SearchableDropdown label="Target Niche" icon="🏢" value={config.niche} onChange={v=>setConfig(c=>({...c,niche:v}))} options={NICHES} placeholder="Select niche…"/>
+          <SearchableDropdown label="Your Service" icon="🛠️" value={config.service} onChange={v=>setConfig(c=>({...c,service:v}))} options={SERVICES} placeholder="Select service…"/>
+          <CountrySelector value={config.country} onChange={v=>setConfig(c=>({...c,country:v}))} niche={config.niche}/>
+          {f("price","Pricing Range","$500 – $2,000","text","💵")}
         </div>
-        <div className="field">
-          <label>🚀 Apollo.io API Key <a href="https://developer.apollo.io" target="_blank" rel="noreferrer" className="get-key-link">Get free →</a></label>
-          <input type="password" placeholder="apollo_xxxxxxxxxxxx" value={apiKeys.apollo} onChange={e=>setApiKeys(k=>({...k,apollo:e.target.value}))}/>
-          <span className="field-hint">Free: 50 contacts/month • 275M+ database</span>
+
+        {/* Business Info */}
+        <div className="dash-card">
+          <div className="dash-card-head">
+            <div className="dash-card-icon" style={{background:"#dbeafe",color:"#1d4ed8"}}>🏢</div>
+            <div>
+              <div className="dash-card-title">Your Business Info</div>
+              <div className="dash-card-sub">Used in emails and proposals</div>
+            </div>
+          </div>
+          {f("yourName","Your Name","Rubel Ahmed","text","👤")}
+          {f("yourEmail","Your Email","you@example.com","email","📧")}
+          {f("companyName","Company / Brand","Rubel SBS","text","🏷️")}
+          {f("calendlyLink","Calendly / Meeting Link","https://calendly.com/you","text","📅")}
+          {config.yourName&&config.yourEmail&&config.companyName&&(
+            <div className="dash-complete-badge">✅ Business info complete</div>
+          )}
         </div>
-        <div className="field">
-          <label>📍 Google Places API Key <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer" className="get-key-link">Get key →</a></label>
-          <input type="password" placeholder="AIzaSy…" value={apiKeys.places} onChange={e=>setApiKeys(k=>({...k,places:e.target.value}))}/>
-          <span className="field-hint">Find local businesses with phone + address</span>
+
+        {/* API Keys */}
+        <div className="dash-card api-keys-card">
+          <div className="dash-card-head">
+            <div className="dash-card-icon" style={{background:"#fef3c7",color:"#d97706"}}>🔑</div>
+            <div>
+              <div className="dash-card-title">Lead Source API Keys</div>
+              <div className="dash-card-sub">Unlock real verified contacts</div>
+            </div>
+          </div>
+          <div className="dash-apikey-list">
+            {[
+              {key:"hunter",label:"Hunter.io",icon:"🎯",hint:"50 free/month — real emails by domain",link:"https://hunter.io/api-keys",ph:"hunter_xxxxxxxxxxxx"},
+              {key:"apollo",label:"Apollo.io",icon:"🚀",hint:"50 free/month — 275M+ database",link:"https://developer.apollo.io",ph:"apollo_xxxxxxxxxxxx"},
+              {key:"places",label:"Google Places",icon:"📍",hint:"Local businesses with phone + address",link:"https://console.cloud.google.com",ph:"AIzaSy…"},
+            ].map(({key,label,icon,hint,link,ph})=>(
+              <div key={key} className="dash-apikey-row">
+                <div className="dash-apikey-meta">
+                  <span className="dash-apikey-name">{icon} {label}</span>
+                  <a href={link} target="_blank" rel="noreferrer" className="get-key-link">Get free key →</a>
+                </div>
+                <input
+                  type="password" placeholder={ph}
+                  value={apiKeys[key]}
+                  onChange={e=>setApiKeys(k=>({...k,[key]:e.target.value}))}
+                  className={`dash-apikey-input ${apiKeys[key]?"active":""}`}
+                />
+                {apiKeys[key]
+                  ? <span className="dash-apikey-ok">✅ Connected</span>
+                  : <span className="dash-apikey-hint">{hint}</span>}
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="api-keys-status">
-          {["hunter","apollo","places"].map(k=>(
-            <div key={k} className={`api-key-badge ${apiKeys[k]?"active":""}`}>{apiKeys[k]?"✅":"⬜"} {k.charAt(0).toUpperCase()+k.slice(1)}</div>
-          ))}
+
+      </div>
+
+      {/* ── Integration cards row ────────────────────────────────────────── */}
+      <div className="dash-integrations-row">
+
+        {/* Gmail */}
+        <div className="dash-card dash-integration-card">
+          <div className="dash-card-head">
+            <div className="dash-card-icon" style={{background:"#fee2e2",color:"#dc2626"}}>📧</div>
+            <div>
+              <div className="dash-card-title">Gmail Integration</div>
+              <div className="dash-card-sub">Send outreach with one click</div>
+            </div>
+            {config.googleClientId&&<div className="dash-int-badge connected">Connected</div>}
+          </div>
+          <div className="field" style={{marginBottom:10}}>
+            <label>Google OAuth Client ID <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" className="get-key-link">Create →</a></label>
+            <input type="text" placeholder="123456789-abc.apps.googleusercontent.com" value={config.googleClientId||""} onChange={e=>setConfig(c=>({...c,googleClientId:e.target.value}))}/>
+          </div>
+          <div className="dash-steps">
+            {["Go to Google Cloud → APIs → Credentials","Create OAuth 2.0 Client ID → Web Application","Add your site URL to Authorized JavaScript origins","Enable Gmail API in APIs & Services → Library","Paste Client ID above → go to Send Emails tab → Connect"].map((s,i)=>(
+              <div key={i} className="dash-step">
+                <span className="dash-step-num">{i+1}</span>
+                <span className="dash-step-text">{s}</span>
+              </div>
+            ))}
+          </div>
         </div>
+
+        {/* Google Sheets */}
+        <div className="dash-card dash-integration-card">
+          <div className="dash-card-head">
+            <div className="dash-card-icon" style={{background:"#dcfce7",color:"#16a34a"}}>📊</div>
+            <div>
+              <div className="dash-card-title">Google Sheets Sync</div>
+              <div className="dash-card-sub">Auto-save leads and actions</div>
+            </div>
+            <label className="toggle-wrap" style={{marginLeft:"auto"}}>
+              <input type="checkbox" checked={sheetsConfig.enabled} onChange={e=>setSheetsConfig(c=>({...c,enabled:e.target.checked}))}/>
+              <span className="toggle-slider"></span>
+            </label>
+          </div>
+          {sheetsConfig.enabled
+            ? <div className="dash-sheets-fields">
+                <div className="field"><label>Sheets API Key</label><input type="password" placeholder="AIzaSy…" value={sheetsConfig.apiKey} onChange={e=>setSheetsConfig(c=>({...c,apiKey:e.target.value}))}/></div>
+                <div className="field"><label>Spreadsheet ID</label><input type="text" placeholder="1BxiMVs0X…" value={sheetsConfig.sheetId} onChange={e=>setSheetsConfig(c=>({...c,sheetId:e.target.value}))}/></div>
+                {sheetsConfig.apiKey&&sheetsConfig.sheetId&&<div className="dash-complete-badge">✅ Sheets configured</div>}
+              </div>
+            : <p className="dash-int-off-msg">Toggle on to auto-save leads, emails, and workflow results to your spreadsheet.</p>
+          }
+        </div>
+
       </div>
     </div>
-    {/* Gmail OAuth */}
-    <div className="card gmail-setup-card">
-      <h3>📧 Gmail Integration — Send Emails Directly</h3>
-      <p className="hint" style={{marginTop:0,marginBottom:14}}>Connect your Gmail to send outreach emails with one click — with your approval before every send.</p>
-      <div className="field">
-        <label>🔑 Google OAuth Client ID <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" className="get-key-link">Create credential →</a></label>
-        <input type="text" placeholder="123456789-abc.apps.googleusercontent.com" value={config.googleClientId||""} onChange={e=>setConfig(c=>({...c,googleClientId:e.target.value}))}/>
-        <span className="field-hint">Create OAuth 2.0 Client ID → Web Application → Authorized origins: your domain</span>
-      </div>
-      <div className="gmail-setup-steps">
-        <div className="step"><span className="step-num">1</span><span>Go to Google Cloud Console → APIs & Services → Credentials</span></div>
-        <div className="step"><span className="step-num">2</span><span>Create Credentials → OAuth 2.0 Client ID → Web Application</span></div>
-        <div className="step"><span className="step-num">3</span><span>Add your site URL to "Authorized JavaScript origins"</span></div>
-        <div className="step"><span className="step-num">4</span><span>Enable Gmail API in APIs & Services → Library</span></div>
-        <div className="step"><span className="step-num">5</span><span>Paste Client ID above → go to 📧 Send Emails tab → Connect</span></div>
-      </div>
-    </div>
-    {/* Google Sheets */}
-    <div className="card sheets-card">
-      <div className="sheets-header">
-        <h3>📊 Google Sheets Auto-Save</h3>
-        <label className="toggle-wrap">
-          <input type="checkbox" checked={sheetsConfig.enabled} onChange={e=>setSheetsConfig(c=>({...c,enabled:e.target.checked}))}/>
-          <span className="toggle-slider"></span><span className="toggle-label">{sheetsConfig.enabled?"Enabled":"Disabled"}</span>
-        </label>
-      </div>
-      {sheetsConfig.enabled&&<div className="sheets-fields">
-        <div className="field"><label>🔑 Sheets API Key</label><input type="password" placeholder="AIzaSy…" value={sheetsConfig.apiKey} onChange={e=>setSheetsConfig(c=>({...c,apiKey:e.target.value}))}/></div>
-        <div className="field"><label>📋 Spreadsheet ID</label><input type="text" placeholder="1BxiMVs0X…" value={sheetsConfig.sheetId} onChange={e=>setSheetsConfig(c=>({...c,sheetId:e.target.value}))}/></div>
-      </div>}
-    </div>
-  </div>);
+  );
 }
 
 // ── EMAIL SENDER TAB ──────────────────────────────────────────────────────────
